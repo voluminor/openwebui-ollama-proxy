@@ -5,24 +5,22 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+
+	"openwebui-ollama-proxy/openai"
 )
 
-// SSEEvent — одно событие из SSE-потока Open WebUI
+// // // // // // // // // //
+
+// SSEEvent — событие из SSE-потока Open WebUI
 type SSEEvent struct {
-	Data string // содержимое после "data: "
-	Done bool   // true если получили "data: [DONE]" или конец потока
-	Err  error  // ошибка чтения
+	Data string
+	Done bool
+	Err  error
 }
 
-// readSSEStream — читает SSE-поток из body и отдаёт события через канал.
-// Канал закрывается когда поток завершён или произошла ошибка.
-// Формат SSE от Open WebUI:
-//
-//	data: {"choices":[...]}\n
-//	\n
-//	data: {"choices":[...]}\n
-//	\n
-//	data: [DONE]\n
+// // // //
+
+// readSSEStream — читает SSE-поток и отдаёт события через канал
 func readSSEStream(body io.Reader) <-chan SSEEvent {
 	ch := make(chan SSEEvent, 16)
 
@@ -30,28 +28,25 @@ func readSSEStream(body io.Reader) <-chan SSEEvent {
 		defer close(ch)
 
 		scanner := bufio.NewScanner(body)
-		// увеличиваем буфер для длинных строк (до 1 МБ)
+		// буфер до 1 МБ для длинных строк
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 		for scanner.Scan() {
 			line := scanner.Text()
 
-			// пропускаем пустые строки (разделители событий SSE)
 			if line == "" {
 				continue
 			}
 
-			// SSE-комментарии начинаются с ':'
+			// SSE-комментарии
 			if strings.HasPrefix(line, ":") {
 				continue
 			}
 
-			// нас интересуют только строки "data: ..."
 			if !strings.HasPrefix(line, "data: ") && !strings.HasPrefix(line, "data:") {
 				continue
 			}
 
-			// извлекаем данные после "data: " или "data:"
 			data := strings.TrimPrefix(line, "data: ")
 			data = strings.TrimPrefix(data, "data:")
 			data = strings.TrimSpace(data)
@@ -60,7 +55,6 @@ func readSSEStream(body io.Reader) <-chan SSEEvent {
 				continue
 			}
 
-			// маркер конца потока
 			if data == "[DONE]" {
 				ch <- SSEEvent{Done: true}
 				return
@@ -77,9 +71,9 @@ func readSSEStream(body io.Reader) <-chan SSEEvent {
 	return ch
 }
 
-// parseStreamChunk — парсит JSON-строку SSE-чанка в OpenAIStreamChunk
-func parseStreamChunk(data string) (OpenAIStreamChunk, error) {
-	var chunk OpenAIStreamChunk
+// parseStreamChunk — парсит SSE-чанк в openai.StreamChunk
+func parseStreamChunk(data string) (openai.StreamChunk, error) {
+	var chunk openai.StreamChunk
 	err := json.Unmarshal([]byte(data), &chunk)
 	return chunk, err
 }

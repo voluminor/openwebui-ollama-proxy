@@ -3,71 +3,73 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"openwebui-ollama-proxy/ollama"
+	"openwebui-ollama-proxy/openai"
 )
 
+// // // // // // // // // //
+
 // handleChat — POST /api/chat
-// Проксирует чат-запросы к Open WebUI, конвертируя формат Ollama → OpenAI и обратно.
-// Поддерживает как streaming (NDJSON), так и non-streaming режимы.
+// Проксирует Ollama → OpenAI и обратно, streaming и non-streaming.
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// декодируем запрос в формате Ollama
-	var ollamaReq OllamaChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&ollamaReq); err != nil {
-		writeError(w, http.StatusBadRequest, "невалидный JSON: %v", err)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+
+	var req ollama.ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: %v", err)
 		return
 	}
 
-	if ollamaReq.Model == "" {
-		writeError(w, http.StatusBadRequest, "model обязателен")
+	if req.Model == "" {
+		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
 
 	// в Ollama stream по умолчанию true
 	streaming := true
-	if ollamaReq.Stream != nil {
-		streaming = *ollamaReq.Stream
+	if req.Stream != nil {
+		streaming = *req.Stream
 	}
 
-	// конвертируем сообщения Ollama → OpenAI
-	messages := make([]OpenAIMessage, len(ollamaReq.Messages))
-	for i, m := range ollamaReq.Messages {
-		messages[i] = OpenAIMessage{Role: m.Role, Content: m.Content}
+	// конвертируем Ollama → OpenAI
+	messages := make([]openai.Message, len(req.Messages))
+	for i, m := range req.Messages {
+		messages[i] = openai.Message{Role: m.Role, Content: m.Content}
 	}
 
-	// собираем запрос к Open WebUI
-	openaiReq := OpenAIChatRequest{
-		Model:    ollamaReq.Model,
+	oaiReq := openai.ChatRequest{
+		Model:    req.Model,
 		Messages: messages,
 		Stream:   streaming,
 	}
-	applyOllamaOptions(&openaiReq, ollamaReq.Options)
+	applyOllamaOptions(&oaiReq, req.Options)
 
 	token, err := s.auth.EnsureToken(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "ошибка авторизации: %v", err)
+		writeError(w, http.StatusInternalServerError, "auth error: %v", err)
 		return
 	}
 
-	// отправляем запрос к Open WebUI
-	payload, _ := json.Marshal(openaiReq)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.auth.baseURL+"/api/chat/completions", bytes.NewReader(payload))
+	payload, _ := json.Marshal(oaiReq)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.auth.BaseURL()+"/api/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "создание запроса: %v", err)
+		writeError(w, http.StatusInternalServerError, "request creation: %v", err)
 		return
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "запрос к Open WebUI: %v", err)
+		writeError(w, http.StatusBadGateway, "Open WebUI request: %v", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -79,34 +81,36 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if streaming {
-		s.streamChatResponse(w, resp.Body, ollamaReq.Model)
+		s.streamChatResponse(w, resp.Body, req.Model)
 	} else {
-		s.nonStreamChatResponse(w, resp.Body, ollamaReq.Model)
+		s.nonStreamChatResponse(w, resp.Body, req.Model)
 	}
 }
 
-// nonStreamChatResponse — обрабатывает обычный (не streaming) ответ от Open WebUI
+// // // //
+
+// nonStreamChatResponse — обычный ответ от Open WebUI
 func (s *Server) nonStreamChatResponse(w http.ResponseWriter, body io.Reader, model string) {
 	data, _ := io.ReadAll(body)
 
-	var openaiResp OpenAIChatResponse
-	if err := json.Unmarshal(data, &openaiResp); err != nil {
-		writeError(w, http.StatusBadGateway, "декодирование ответа: %v", err)
+	var oaiResp openai.ChatResponse
+	if err := json.Unmarshal(data, &oaiResp); err != nil {
+		writeError(w, http.StatusBadGateway, "response decode: %v", err)
 		return
 	}
 
-	if len(openaiResp.Choices) == 0 {
-		writeError(w, http.StatusBadGateway, "пустой ответ от Open WebUI")
+	if len(oaiResp.Choices) == 0 {
+		writeError(w, http.StatusBadGateway, "empty response from Open WebUI")
 		return
 	}
 
-	choice := openaiResp.Choices[0]
+	choice := oaiResp.Choices[0]
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	writeJSON(w, http.StatusOK, OllamaChatResponse{
+	writeJSON(w, http.StatusOK, ollama.ChatResponse{
 		Model:     model,
 		CreatedAt: now,
-		Message: OllamaMessage{
+		Message: ollama.Message{
 			Role:    "assistant",
 			Content: choice.Message.Content,
 		},
@@ -114,15 +118,15 @@ func (s *Server) nonStreamChatResponse(w http.ResponseWriter, body io.Reader, mo
 		DoneReason:      "stop",
 		TotalDuration:   0,
 		PromptEvalCount: 0,
-		EvalCount:       len(choice.Message.Content) / 4, // примерная оценка токенов
+		EvalCount:       len(choice.Message.Content) / 4,
 	})
 }
 
-// streamChatResponse — читает SSE-поток от Open WebUI и отдаёт NDJSON в формате Ollama
+// streamChatResponse — SSE → NDJSON в формате Ollama
 func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming не поддерживается")
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 
@@ -137,7 +141,7 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 	events := readSSEStream(body)
 	for event := range events {
 		if event.Err != nil {
-			log.Printf("[chat/stream] ошибка чтения SSE: %v", event.Err)
+			log.Printf("[chat/stream] SSE read error: %v", event.Err)
 			break
 		}
 
@@ -145,10 +149,9 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 			break
 		}
 
-		// парсим SSE-чанк
 		chunk, err := parseStreamChunk(event.Data)
 		if err != nil {
-			log.Printf("[chat/stream] ошибка парсинга чанка: %v", err)
+			log.Printf("[chat/stream] chunk parse error: %v", err)
 			continue
 		}
 
@@ -158,7 +161,6 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 
 		choice := chunk.Choices[0]
 
-		// проверяем finish_reason
 		if choice.FinishReason != nil {
 			finishReason = *choice.FinishReason
 		}
@@ -171,31 +173,29 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 		evalCount++
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 
-		ollamaChunk := OllamaChatResponse{
+		writeNDJSON(w, ollama.ChatResponse{
 			Model:     model,
 			CreatedAt: now,
-			Message: OllamaMessage{
+			Message: ollama.Message{
 				Role:    "assistant",
 				Content: content,
 			},
 			Done: false,
-		}
-
-		writeNDJSON(w, ollamaChunk)
+		})
 		flusher.Flush()
 	}
 
-	// финальный чанк с done: true
+	// финальный чанк
 	duration := time.Since(startTime)
 	doneReason := "stop"
 	if finishReason != "" {
 		doneReason = finishReason
 	}
 
-	finalChunk := OllamaChatResponse{
+	writeNDJSON(w, ollama.ChatResponse{
 		Model:     model,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		Message: OllamaMessage{
+		Message: ollama.Message{
 			Role:    "assistant",
 			Content: "",
 		},
@@ -203,111 +203,6 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 		DoneReason:    doneReason,
 		TotalDuration: duration.Nanoseconds(),
 		EvalCount:     evalCount,
-	}
-
-	writeNDJSON(w, finalChunk)
+	})
 	flusher.Flush()
-}
-
-// applyOllamaOptions — конвертирует Ollama options в поля OpenAI запроса
-func applyOllamaOptions(req *OpenAIChatRequest, options map[string]any) {
-	if options == nil {
-		return
-	}
-
-	if v, ok := getFloat64(options, "temperature"); ok {
-		req.Temperature = &v
-	}
-	if v, ok := getFloat64(options, "top_p"); ok {
-		req.TopP = &v
-	}
-	if v, ok := getInt(options, "num_predict"); ok {
-		req.MaxTokens = &v
-	}
-	if v, ok := getFloat64(options, "frequency_penalty"); ok {
-		req.FrequencyPenalty = &v
-	}
-	if v, ok := getFloat64(options, "presence_penalty"); ok {
-		req.PresencePenalty = &v
-	}
-	if v, ok := getInt(options, "seed"); ok {
-		req.Seed = &v
-	}
-	if v, ok := options["stop"]; ok {
-		switch s := v.(type) {
-		case []any:
-			stops := make([]string, 0, len(s))
-			for _, item := range s {
-				if str, ok := item.(string); ok {
-					stops = append(stops, str)
-				}
-			}
-			if len(stops) > 0 {
-				req.Stop = stops
-			}
-		case []string:
-			req.Stop = s
-		}
-	}
-}
-
-// getFloat64 — извлекает float64 из map[string]any
-func getFloat64(m map[string]any, key string) (float64, bool) {
-	v, ok := m[key]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case int:
-		return float64(n), true
-	case json.Number:
-		f, err := n.Float64()
-		return f, err == nil
-	default:
-		return 0, false
-	}
-}
-
-// getInt — извлекает int из map[string]any
-func getInt(m map[string]any, key string) (int, bool) {
-	v, ok := m[key]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case float64:
-		return int(n), true
-	case int:
-		return n, true
-	case json.Number:
-		i, err := n.Int64()
-		return int(i), err == nil
-	default:
-		return 0, false
-	}
-}
-
-// writeJSON — записывает JSON-ответ с заданным статусом
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-// writeNDJSON — записывает одну JSON-строку (NDJSON формат)
-func writeNDJSON(w http.ResponseWriter, v any) {
-	data, _ := json.Marshal(v)
-	w.Write(data)
-	w.Write([]byte("\n"))
-}
-
-// writeError — записывает JSON-ошибку
-func writeError(w http.ResponseWriter, status int, format string, args ...any) {
-	msg := fmt.Sprintf(format, args...)
-	log.Printf("[ошибка] %s", msg)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }

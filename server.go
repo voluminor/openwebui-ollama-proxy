@@ -5,29 +5,35 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"openwebui-ollama-proxy/auth"
+	"openwebui-ollama-proxy/ollama"
 )
+
+// // // // // // // // // //
 
 const modelsCacheTTL = 10 * time.Minute
 
-// Server — HTTP-сервер, имитирующий Ollama API.
-// Проксирует запросы к Open WebUI через Auth.
+// // // //
+
+// Server — HTTP-сервер, имитирующий Ollama API
 type Server struct {
-	auth       *Auth
+	auth       *auth.Obj
 	httpClient *http.Client
 	mux        *http.ServeMux
 
 	// кеш моделей
 	modelsMu      sync.RWMutex
-	modelsCache   []OllamaModelInfo
+	modelsCache   []ollama.ModelInfo
 	modelsCacheAt time.Time
 }
 
-// NewServer — создаёт сервер с настроенным роутингом
-func NewServer(auth *Auth) *Server {
+// NewServer — создаёт сервер с роутингом
+func NewServer(a *auth.Obj) *Server {
 	s := &Server{
-		auth: auth,
+		auth: a,
 		httpClient: &http.Client{
-			// без таймаута для streaming-запросов — они могут длиться долго
+			// без таймаута — streaming-запросы могут длиться долго
 			Timeout: 0,
 		},
 		mux: http.NewServeMux(),
@@ -37,12 +43,12 @@ func NewServer(auth *Auth) *Server {
 	return s
 }
 
-// setupRoutes — регистрирует все маршруты
+// // // //
+
+// setupRoutes — регистрирует маршруты
 func (s *Server) setupRoutes() {
-	// health check (GET и HEAD на /)
 	s.mux.HandleFunc("/", s.handleRoot)
 
-	// версия
 	s.mux.HandleFunc("GET /api/version", s.handleVersion)
 
 	// модели
@@ -50,11 +56,11 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("POST /api/show", s.handleShow)
 	s.mux.HandleFunc("GET /api/ps", s.handlePs)
 
-	// чат и генерация — основные рабочие эндпоинты
+	// чат и генерация
 	s.mux.HandleFunc("POST /api/chat", s.handleChat)
 	s.mux.HandleFunc("POST /api/generate", s.handleGenerate)
 
-	// запрещённые операции (управление моделями)
+	// запрещённые операции
 	s.mux.HandleFunc("POST /api/pull", s.handleForbidden)
 	s.mux.HandleFunc("POST /api/push", s.handleForbidden)
 	s.mux.HandleFunc("POST /api/create", s.handleForbidden)
@@ -66,6 +72,8 @@ func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("POST /api/embeddings", s.handleEmbedNotSupported)
 }
 
+// // // //
+
 // ServeHTTP — реализует http.Handler, логирует запросы
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -76,10 +84,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[%s] %s %s — %v", r.RemoteAddr, r.Method, r.URL.Path, time.Since(start))
 }
 
-// handleRoot — GET / и HEAD /
-// Стандартный ответ Ollama на health check
+// handleRoot — health check (GET / и HEAD /)
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	// отвечаем только на корневой путь, остальное — 404
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -88,7 +94,6 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	// Ollama отвечает plain text
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Ollama is running"))
@@ -96,5 +101,5 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 // handleVersion — GET /api/version
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, OllamaVersionResponse{Version: "0.5.4"})
+	writeJSON(w, http.StatusOK, ollama.VersionResponse{Version: "0.5.4"})
 }

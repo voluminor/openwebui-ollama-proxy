@@ -8,72 +8,76 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"openwebui-ollama-proxy/ollama"
+	"openwebui-ollama-proxy/openai"
 )
 
+// // // // // // // // // //
+
 // handleGenerate — POST /api/generate
-// Конвертирует prompt/system в формат messages и проксирует к Open WebUI.
-// Поддерживает streaming (NDJSON) и non-streaming режимы.
+// Конвертирует prompt/system в messages и проксирует к Open WebUI.
 func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	var ollamaReq OllamaGenerateRequest
-	if err := json.NewDecoder(r.Body).Decode(&ollamaReq); err != nil {
-		writeError(w, http.StatusBadRequest, "невалидный JSON: %v", err)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+
+	var req ollama.GenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: %v", err)
 		return
 	}
 
-	if ollamaReq.Model == "" {
-		writeError(w, http.StatusBadRequest, "model обязателен")
+	if req.Model == "" {
+		writeError(w, http.StatusBadRequest, "model is required")
 		return
 	}
 
 	// в Ollama stream по умолчанию true
 	streaming := true
-	if ollamaReq.Stream != nil {
-		streaming = *ollamaReq.Stream
+	if req.Stream != nil {
+		streaming = *req.Stream
 	}
 
-	// конвертируем prompt + system в массив messages
-	var messages []OpenAIMessage
-	if ollamaReq.System != "" {
-		messages = append(messages, OpenAIMessage{Role: "system", Content: ollamaReq.System})
+	// prompt + system → messages
+	var messages []openai.Message
+	if req.System != "" {
+		messages = append(messages, openai.Message{Role: "system", Content: req.System})
 	}
-	if ollamaReq.Prompt != "" {
-		messages = append(messages, OpenAIMessage{Role: "user", Content: ollamaReq.Prompt})
+	if req.Prompt != "" {
+		messages = append(messages, openai.Message{Role: "user", Content: req.Prompt})
 	}
 
 	if len(messages) == 0 {
-		writeError(w, http.StatusBadRequest, "prompt обязателен")
+		writeError(w, http.StatusBadRequest, "prompt is required")
 		return
 	}
 
-	// собираем OpenAI запрос
-	openaiReq := OpenAIChatRequest{
-		Model:    ollamaReq.Model,
+	oaiReq := openai.ChatRequest{
+		Model:    req.Model,
 		Messages: messages,
 		Stream:   streaming,
 	}
-	applyOllamaOptions(&openaiReq, ollamaReq.Options)
+	applyOllamaOptions(&oaiReq, req.Options)
 
 	token, err := s.auth.EnsureToken(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "ошибка авторизации: %v", err)
+		writeError(w, http.StatusInternalServerError, "auth error: %v", err)
 		return
 	}
 
-	// отправляем запрос к Open WebUI
-	payload, _ := json.Marshal(openaiReq)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.auth.baseURL+"/api/chat/completions", bytes.NewReader(payload))
+	payload, _ := json.Marshal(oaiReq)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.auth.BaseURL()+"/api/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "создание запроса: %v", err)
+		writeError(w, http.StatusInternalServerError, "request creation: %v", err)
 		return
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "запрос к Open WebUI: %v", err)
+		writeError(w, http.StatusBadGateway, "Open WebUI request: %v", err)
 		return
 	}
 	defer resp.Body.Close()
@@ -85,31 +89,33 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if streaming {
-		s.streamGenerateResponse(w, resp.Body, ollamaReq.Model)
+		s.streamGenerateResponse(w, resp.Body, req.Model)
 	} else {
-		s.nonStreamGenerateResponse(w, resp.Body, ollamaReq.Model)
+		s.nonStreamGenerateResponse(w, resp.Body, req.Model)
 	}
 }
 
-// nonStreamGenerateResponse — обрабатывает обычный ответ и конвертирует в формат /api/generate
+// // // //
+
+// nonStreamGenerateResponse — обычный ответ → формат /api/generate
 func (s *Server) nonStreamGenerateResponse(w http.ResponseWriter, body io.Reader, model string) {
 	data, _ := io.ReadAll(body)
 
-	var openaiResp OpenAIChatResponse
-	if err := json.Unmarshal(data, &openaiResp); err != nil {
-		writeError(w, http.StatusBadGateway, "декодирование ответа: %v", err)
+	var oaiResp openai.ChatResponse
+	if err := json.Unmarshal(data, &oaiResp); err != nil {
+		writeError(w, http.StatusBadGateway, "response decode: %v", err)
 		return
 	}
 
-	if len(openaiResp.Choices) == 0 {
-		writeError(w, http.StatusBadGateway, "пустой ответ от Open WebUI")
+	if len(oaiResp.Choices) == 0 {
+		writeError(w, http.StatusBadGateway, "empty response from Open WebUI")
 		return
 	}
 
-	choice := openaiResp.Choices[0]
+	choice := oaiResp.Choices[0]
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	writeJSON(w, http.StatusOK, OllamaGenerateResponse{
+	writeJSON(w, http.StatusOK, ollama.GenerateResponse{
 		Model:      model,
 		CreatedAt:  now,
 		Response:   choice.Message.Content,
@@ -119,11 +125,11 @@ func (s *Server) nonStreamGenerateResponse(w http.ResponseWriter, body io.Reader
 	})
 }
 
-// streamGenerateResponse — читает SSE-поток и отдаёт NDJSON в формате /api/generate
+// streamGenerateResponse — SSE → NDJSON в формате /api/generate
 func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.Reader, model string) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming не поддерживается")
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 
@@ -138,7 +144,7 @@ func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.Reader, m
 	events := readSSEStream(body)
 	for event := range events {
 		if event.Err != nil {
-			log.Printf("[generate/stream] ошибка чтения SSE: %v", event.Err)
+			log.Printf("[generate/stream] SSE read error: %v", event.Err)
 			break
 		}
 
@@ -148,7 +154,7 @@ func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.Reader, m
 
 		chunk, err := parseStreamChunk(event.Data)
 		if err != nil {
-			log.Printf("[generate/stream] ошибка парсинга чанка: %v", err)
+			log.Printf("[generate/stream] chunk parse error: %v", err)
 			continue
 		}
 
@@ -170,14 +176,12 @@ func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.Reader, m
 		evalCount++
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 
-		ollamaChunk := OllamaGenerateResponse{
+		writeNDJSON(w, ollama.GenerateResponse{
 			Model:     model,
 			CreatedAt: now,
 			Response:  content,
 			Done:      false,
-		}
-
-		writeNDJSON(w, ollamaChunk)
+		})
 		flusher.Flush()
 	}
 
@@ -188,7 +192,7 @@ func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.Reader, m
 		doneReason = finishReason
 	}
 
-	finalChunk := OllamaGenerateResponse{
+	writeNDJSON(w, ollama.GenerateResponse{
 		Model:         model,
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 		Response:      "",
@@ -196,8 +200,6 @@ func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.Reader, m
 		DoneReason:    doneReason,
 		TotalDuration: duration.Nanoseconds(),
 		EvalCount:     evalCount,
-	}
-
-	writeNDJSON(w, finalChunk)
+	})
 	flusher.Flush()
 }
