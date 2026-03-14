@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -49,9 +51,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	oaiReq := openai.ChatRequest{
-		Model:    req.Model,
-		Messages: messages,
-		Stream:   streaming,
+		Model:          req.Model,
+		Messages:       messages,
+		Stream:         streaming,
+		ResponseFormat: ollamaFormatToResponseFormat(req.Format),
 	}
 	applyOllamaOptions(&oaiReq, req.Options)
 
@@ -72,6 +75,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			log.Printf("[chat] client disconnected")
+			return
+		}
 		writeError(w, http.StatusBadGateway, "Open WebUI request: %v", err)
 		return
 	}
@@ -117,11 +124,8 @@ func (s *Server) nonStreamChatResponse(w http.ResponseWriter, body io.Reader, mo
 			Role:    "assistant",
 			Content: choice.Message.Content,
 		},
-		Done:            true,
-		DoneReason:      "stop",
-		TotalDuration:   0,
-		PromptEvalCount: 0,
-		EvalCount:       len(choice.Message.Content) / 4,
+		Done:       true,
+		DoneReason: "stop",
 	})
 }
 
@@ -138,7 +142,6 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 	w.WriteHeader(http.StatusOK)
 
 	startTime := time.Now()
-	evalCount := 0
 	var finishReason string
 
 	events := readSSEStream(body)
@@ -173,7 +176,6 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 			continue
 		}
 
-		evalCount++
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 
 		writeNDJSON(w, ollama.ChatResponse{
@@ -205,7 +207,6 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 		Done:          true,
 		DoneReason:    doneReason,
 		TotalDuration: duration.Nanoseconds(),
-		EvalCount:     evalCount,
 	})
 	flusher.Flush()
 }

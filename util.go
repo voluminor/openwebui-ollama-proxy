@@ -81,6 +81,20 @@ func getInt(m map[string]any, key string) (int, bool) {
 
 // // // //
 
+// ollamaFormatToResponseFormat — конвертирует Ollama format в OpenAI response_format.
+// "json" → {type: "json_object"}, schema-объект → {type: "json_schema", json_schema: ...}
+func ollamaFormatToResponseFormat(format any) *openai.ResponseFormat {
+	switch f := format.(type) {
+	case string:
+		if f == "json" {
+			return &openai.ResponseFormat{Type: "json_object"}
+		}
+	case map[string]any:
+		return &openai.ResponseFormat{Type: "json_schema", JSONSchema: f}
+	}
+	return nil
+}
+
 // applyOllamaOptions — конвертирует Ollama options в поля OpenAI-запроса
 func applyOllamaOptions(req *openai.ChatRequest, options map[string]any) {
 	if options == nil {

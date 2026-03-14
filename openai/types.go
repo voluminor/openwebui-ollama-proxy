@@ -8,18 +8,25 @@ type Message struct {
 	Content string `json:"content"`
 }
 
+// ResponseFormat — формат ответа (json_object / json_schema)
+type ResponseFormat struct {
+	Type       string `json:"type"`
+	JSONSchema any    `json:"json_schema,omitempty"`
+}
+
 // ChatRequest — запрос к /api/chat/completions
 type ChatRequest struct {
-	Model            string    `json:"model"`
-	Messages         []Message `json:"messages"`
-	Stream           bool      `json:"stream"`
-	Temperature      *float64  `json:"temperature,omitempty"`
-	TopP             *float64  `json:"top_p,omitempty"`
-	MaxTokens        *int      `json:"max_tokens,omitempty"`
-	Stop             []string  `json:"stop,omitempty"`
-	FrequencyPenalty *float64  `json:"frequency_penalty,omitempty"`
-	PresencePenalty  *float64  `json:"presence_penalty,omitempty"`
-	Seed             *int      `json:"seed,omitempty"`
+	Model            string          `json:"model"`
+	Messages         []Message       `json:"messages"`
+	Stream           bool            `json:"stream"`
+	Temperature      *float64        `json:"temperature,omitempty"`
+	TopP             *float64        `json:"top_p,omitempty"`
+	MaxTokens        *int            `json:"max_tokens,omitempty"`
+	Stop             []string        `json:"stop,omitempty"`
+	FrequencyPenalty *float64        `json:"frequency_penalty,omitempty"`
+	PresencePenalty  *float64        `json:"presence_penalty,omitempty"`
+	Seed             *int            `json:"seed,omitempty"`
+	ResponseFormat   *ResponseFormat `json:"response_format,omitempty"`
 }
 
 // // // // ответы // // // //
