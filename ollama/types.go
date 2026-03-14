@@ -12,6 +12,7 @@ type Message struct {
 type ChatRequest struct {
 	Model     string         `json:"model"`
 	Messages  []Message      `json:"messages"`
+	System    string         `json:"system,omitempty"`
 	Stream    *bool          `json:"stream,omitempty"`
 	Options   map[string]any `json:"options,omitempty"`
 	Format    any            `json:"format,omitempty"`
