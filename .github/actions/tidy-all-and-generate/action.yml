@@ -4,9 +4,9 @@ description: 'Initialize all the modules and generate files'
 runs:
   using: 'composite'
   steps:
-    - name: 📥 go mod tidy-all
+    - name: 📥 go mod tidy
       shell: bash
-      run: ./_run/scripts/go_tidy_all.sh
+      run: go mod tidy
 
     - name: 🛠️ go generate
       shell: bash

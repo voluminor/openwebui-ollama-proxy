@@ -9,24 +9,18 @@ on:
     paths-ignore:
       - '*.txt'
       - '*.md'
-  push:
-    tags-ignore:
-      - '*'
 
 env:
-  GO_VERSION: "1.24"
-  PUSH_BRANCH: ${{ github.repository.default_branch }}
+  GO_VERSION: "1.24.2"
 
 jobs:
   prepare:
     name: "🔧 Prepare"
     runs-on: ubuntu-latest
-    if: "!contains(github.event_name, 'release')"
     steps:
-      - name: 🛎️ Checkout ${{ env.PUSH_BRANCH }}
-        uses: actions/checkout@v4
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
         with:
-          ref: ${{ env.PUSH_BRANCH }}
           fetch-depth: 1
 
       - uses: ./.github/actions/init-go
@@ -35,29 +29,25 @@ jobs:
 
       - uses: ./.github/actions/tidy-all-and-generate
 
-      - name: 📦 Upload source for tests
+      - name: 📦 Upload source
         uses: actions/upload-artifact@v4
         with:
           name: src-gen
           path: .
 
   test:
-    name: "🧪 Test & Benchmark [${{ matrix.os }}]"
+    name: "🧪 Test [${{ matrix.os }}]"
     needs: [ prepare ]
     runs-on: ${{ matrix.os }}
-    if: "!contains(github.event_name, 'release')"
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-    permissions:
-      contents: write
 
     steps:
-      - name: 🛎️ Checkout ${{ env.PUSH_BRANCH }}
-        uses: actions/checkout@v4
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
         with:
-          ref: ${{ env.PUSH_BRANCH }}
           fetch-depth: 1
 
       - name: 📥 Download source
@@ -70,14 +60,4 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: 🧪 Run tests
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          go test -race -v ./... || exit 1
-
-      - name: 📊 Run benchmarks
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          go test -bench . -run=NONE -v ./... || exit 1
+      - uses: ./.github/actions/run-tests
