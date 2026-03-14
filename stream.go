@@ -12,7 +12,7 @@ import (
 
 // // // // // // // // // //
 
-// SSEEvent — событие из SSE-потока Open WebUI
+// SSEEvent — event from Open WebUI SSE stream
 type SSEEvent struct {
 	Data string
 	Done bool
@@ -21,15 +21,15 @@ type SSEEvent struct {
 
 // // // //
 
-// readSSEStream — читает SSE-поток и отдаёт события через канал.
-// idleTimeout > 0 закрывает body при отсутствии данных.
+// readSSEStream — reads SSE stream and emits events via channel.
+// idleTimeout > 0 closes body on data absence.
 func readSSEStream(body io.ReadCloser, idleTimeout time.Duration) <-chan SSEEvent {
 	ch := make(chan SSEEvent, 16)
 
 	go func() {
 		defer close(ch)
 
-		// idle timeout: при срабатывании закрываем body → scanner.Scan() вернёт ошибку
+		// idle timeout: on trigger, close body → scanner.Scan() returns error
 		var timer *time.Timer
 		if idleTimeout > 0 {
 			timer = time.AfterFunc(idleTimeout, func() {
@@ -39,7 +39,7 @@ func readSSEStream(body io.ReadCloser, idleTimeout time.Duration) <-chan SSEEven
 		}
 
 		scanner := bufio.NewScanner(body)
-		// буфер до 1 МБ для длинных строк
+		// buffer up to 1 MB for long lines
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 		for scanner.Scan() {
@@ -53,7 +53,7 @@ func readSSEStream(body io.ReadCloser, idleTimeout time.Duration) <-chan SSEEven
 				continue
 			}
 
-			// SSE-комментарии
+			// SSE comments
 			if strings.HasPrefix(line, ":") {
 				continue
 			}
@@ -86,7 +86,7 @@ func readSSEStream(body io.ReadCloser, idleTimeout time.Duration) <-chan SSEEven
 	return ch
 }
 
-// parseStreamChunk — парсит SSE-чанк в openai.StreamChunk
+// parseStreamChunk — parses SSE chunk into openai.StreamChunk
 func parseStreamChunk(data string) (openai.StreamChunk, error) {
 	var chunk openai.StreamChunk
 	err := json.Unmarshal([]byte(data), &chunk)

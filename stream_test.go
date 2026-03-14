@@ -10,7 +10,7 @@ import (
 
 // // // // // // // // // //
 
-// nopReadCloser — io.ReadCloser поверх io.Reader
+// nopReadCloser — io.ReadCloser over io.Reader
 type nopReadCloser struct {
 	io.Reader
 }
@@ -40,7 +40,7 @@ func TestReadSSEStream_Basic(t *testing.T) {
 		t.Fatal("expected DONE event")
 	}
 
-	// канал должен закрыться
+	// channel should close
 	_, ok := <-events
 	if ok {
 		t.Fatal("channel should be closed")
@@ -88,7 +88,7 @@ func TestReadSSEStream_EmptyData(t *testing.T) {
 }
 
 func TestReadSSEStream_NoSpace(t *testing.T) {
-	// "data:payload" без пробела
+	// "data:payload" without space
 	input := "data:payload\ndata: [DONE]\n"
 	events := readSSEStream(newRC(input), 0)
 
@@ -99,7 +99,7 @@ func TestReadSSEStream_NoSpace(t *testing.T) {
 }
 
 func TestReadSSEStream_EOF(t *testing.T) {
-	// поток без [DONE] — просто закрывается
+	// stream without [DONE] — simply closes
 	input := "data: chunk1\ndata: chunk2\n"
 	events := readSSEStream(newRC(input), 0)
 
@@ -112,7 +112,7 @@ func TestReadSSEStream_EOF(t *testing.T) {
 		t.Fatalf("data = %q", ev.Data)
 	}
 
-	// канал закрывается
+	// channel closes
 	_, ok := <-events
 	if ok {
 		t.Fatal("channel should be closed after EOF")
@@ -120,12 +120,12 @@ func TestReadSSEStream_EOF(t *testing.T) {
 }
 
 func TestReadSSEStream_IdleTimeout(t *testing.T) {
-	// используем pipe: запишем один чанк и замолчим
+	// use pipe: write one chunk and go silent
 	pr, pw := io.Pipe()
 
 	go func() {
 		fmt.Fprintln(pw, "data: first")
-		// не пишем больше — должен сработать idle timeout
+		// stop writing — idle timeout should trigger
 	}()
 
 	events := readSSEStream(pr, 100*time.Millisecond)
@@ -135,7 +135,7 @@ func TestReadSSEStream_IdleTimeout(t *testing.T) {
 		t.Fatalf("data = %q, want %q", ev.Data, "first")
 	}
 
-	// ждём timeout — должна прийти ошибка или закрытие
+	// wait for timeout — should receive error or close
 	select {
 	case ev, ok := <-events:
 		if ok && ev.Err == nil {
@@ -185,10 +185,10 @@ func TestParseStreamChunk_Invalid(t *testing.T) {
 	}
 }
 
-// // // // бенчмарки // // // //
+// // // // benchmarks // // // //
 
 func BenchmarkReadSSEStream(b *testing.B) {
-	// генерируем SSE-поток
+	// generate SSE stream
 	var sb strings.Builder
 	for i := 0; i < 100; i++ {
 		fmt.Fprintf(&sb, "data: {\"choices\":[{\"delta\":{\"content\":\"token%d\"}}]}\n\n", i)

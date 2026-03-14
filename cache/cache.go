@@ -18,15 +18,15 @@ import (
 
 // // // // // // // // // //
 
-// nonceSize — стандартный размер nonce для AES-GCM
+// nonceSize — standard nonce size for AES-GCM
 const nonceSize = 12
 
-// minFileSize — магия (2) + nonce (12) + integrity SHA-256 (32)
+// minFileSize — magic (2) + nonce (12) + integrity SHA-256 (32)
 const minFileSize = 2 + nonceSize + 32
 
 // // // //
 
-// deriveKey — AES-ключ: SHA-256(integrity + соль сборки)
+// deriveKey — AES key: SHA-256(integrity + build salt)
 func deriveKey(integrity []byte) []byte {
 	h := sha256.New()
 	h.Write(integrity)
@@ -34,7 +34,7 @@ func deriveKey(integrity []byte) []byte {
 	return h.Sum(nil)
 }
 
-// removeInvalid — удаляет повреждённый файл кеша
+// removeInvalid — removes a corrupted cache file
 func removeInvalid(path string) {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		log.Printf("[cache] remove %s: %v", path, err)
@@ -43,8 +43,8 @@ func removeInvalid(path string) {
 
 // // // //
 
-// Read — читает, расшифровывает и декодирует объект из файла.
-// При любой ошибке: логирует, удаляет файл, возвращает nil.
+// Read — reads, decrypts, and decodes an object from file.
+// On any error: logs, removes the file, returns nil.
 func Read[T any](path string, magic [2]byte) *T {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -109,8 +109,8 @@ func Read[T any](path string, magic [2]byte) *T {
 	return &v
 }
 
-// Write — кодирует, шифрует и записывает объект в файл.
-// Формат: [magic(2)][nonce(12)][ciphertext][integrity SHA-256(32)]
+// Write — encodes, encrypts, and writes an object to file.
+// Format: [magic(2)][nonce(12)][ciphertext][integrity SHA-256(32)]
 func Write[T any](path string, magic [2]byte, v T) error {
 	var buf bytes.Buffer
 	if err := gob.NewEncoder(&buf).Encode(v); err != nil {

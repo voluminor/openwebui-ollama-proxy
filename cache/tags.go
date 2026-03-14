@@ -11,7 +11,7 @@ import (
 
 var magicTags = [2]byte{0xCA, 0x02}
 
-// TagsObj — кешированный список моделей
+// TagsObj — cached model list
 type TagsObj struct {
 	Models    []ollama.ModelInfo
 	ExpiresAt time.Time
@@ -19,12 +19,12 @@ type TagsObj struct {
 
 // // // //
 
-// ReadTags — читает список моделей из кеша
+// ReadTags — reads model list from cache
 func ReadTags(cacheDir string) *TagsObj {
 	return Read[TagsObj](filepath.Join(cacheDir, "tags.bin"), magicTags)
 }
 
-// WriteTags — записывает список моделей в кеш
+// WriteTags — writes model list to cache
 func WriteTags(cacheDir string, models []ollama.ModelInfo, ttl time.Duration) error {
 	return Write(filepath.Join(cacheDir, "tags.bin"), magicTags, TagsObj{
 		Models:    models,

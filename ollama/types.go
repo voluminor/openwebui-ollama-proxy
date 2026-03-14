@@ -1,15 +1,15 @@
 package ollama
 
-// // // // запросы // // // //
+// // // // requests // // // //
 
-// Message — сообщение Ollama
+// Message — Ollama message
 type Message struct {
 	Role    string   `json:"role"`
 	Content string   `json:"content"`
 	Images  []string `json:"images,omitempty"`
 }
 
-// ChatRequest — запрос POST /api/chat
+// ChatRequest — POST /api/chat request
 type ChatRequest struct {
 	Model     string         `json:"model"`
 	Messages  []Message      `json:"messages"`
@@ -20,7 +20,7 @@ type ChatRequest struct {
 	KeepAlive string         `json:"keep_alive,omitempty"`
 }
 
-// GenerateRequest — запрос POST /api/generate
+// GenerateRequest — POST /api/generate request
 type GenerateRequest struct {
 	Model     string         `json:"model"`
 	Prompt    string         `json:"prompt"`
@@ -33,21 +33,21 @@ type GenerateRequest struct {
 	Raw       bool           `json:"raw,omitempty"`
 }
 
-// ShowRequest — запрос POST /api/show
+// ShowRequest — POST /api/show request
 type ShowRequest struct {
 	Model string `json:"model"`
 }
 
-// // // // ответы // // // //
+// // // // responses // // // //
 
-// ChatResponse — ответ /api/chat (чанк стрима или полный)
+// ChatResponse — /api/chat response (stream chunk or full)
 type ChatResponse struct {
 	Model      string  `json:"model"`
 	CreatedAt  string  `json:"created_at"`
 	Message    Message `json:"message"`
 	Done       bool    `json:"done"`
 	DoneReason string  `json:"done_reason,omitempty"`
-	// метрики — только в финальном чанке
+	// metrics — only in the final chunk
 	TotalDuration      int64 `json:"total_duration,omitempty"`
 	LoadDuration       int64 `json:"load_duration,omitempty"`
 	PromptEvalCount    int   `json:"prompt_eval_count,omitempty"`
@@ -56,14 +56,14 @@ type ChatResponse struct {
 	EvalDuration       int64 `json:"eval_duration,omitempty"`
 }
 
-// GenerateResponse — ответ /api/generate
+// GenerateResponse — /api/generate response
 type GenerateResponse struct {
 	Model      string `json:"model"`
 	CreatedAt  string `json:"created_at"`
 	Response   string `json:"response"`
 	Done       bool   `json:"done"`
 	DoneReason string `json:"done_reason,omitempty"`
-	// метрики
+	// metrics
 	TotalDuration      int64 `json:"total_duration,omitempty"`
 	LoadDuration       int64 `json:"load_duration,omitempty"`
 	PromptEvalCount    int   `json:"prompt_eval_count,omitempty"`
@@ -72,9 +72,9 @@ type GenerateResponse struct {
 	EvalDuration       int64 `json:"eval_duration,omitempty"`
 }
 
-// // // // модели // // // //
+// // // // models // // // //
 
-// ModelInfo — модель в ответе /api/tags
+// ModelInfo — model entry in /api/tags response
 type ModelInfo struct {
 	Name       string       `json:"name"`
 	Model      string       `json:"model"`
@@ -84,7 +84,7 @@ type ModelInfo struct {
 	Details    ModelDetails `json:"details"`
 }
 
-// ModelDetails — детали модели
+// ModelDetails — model details
 type ModelDetails struct {
 	Format            string   `json:"format"`
 	Family            string   `json:"family"`
@@ -93,12 +93,12 @@ type ModelDetails struct {
 	QuantizationLevel string   `json:"quantization_level"`
 }
 
-// TagsResponse — ответ GET /api/tags
+// TagsResponse — GET /api/tags response
 type TagsResponse struct {
 	Models []ModelInfo `json:"models"`
 }
 
-// ShowResponse — ответ POST /api/show
+// ShowResponse — POST /api/show response
 type ShowResponse struct {
 	Name       string       `json:"name"`
 	Model      string       `json:"model"`
@@ -111,12 +111,12 @@ type ShowResponse struct {
 	Template   string       `json:"template"`
 }
 
-// PsResponse — ответ GET /api/ps
+// PsResponse — GET /api/ps response
 type PsResponse struct {
 	Models []any `json:"models"`
 }
 
-// VersionResponse — ответ GET /api/version
+// VersionResponse — GET /api/version response
 type VersionResponse struct {
 	Version string `json:"version"`
 }

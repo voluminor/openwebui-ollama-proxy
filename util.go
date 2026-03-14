@@ -12,21 +12,21 @@ import (
 
 // // // // // // // // // //
 
-// writeJSON — JSON-ответ с заданным статусом
+// writeJSON — JSON response with given status
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
 
-// writeNDJSON — одна JSON-строка (NDJSON)
+// writeNDJSON — single JSON line (NDJSON)
 func writeNDJSON(w http.ResponseWriter, v any) {
 	data, _ := json.Marshal(v)
 	w.Write(data)
 	w.Write([]byte("\n"))
 }
 
-// writeError — JSON-ошибка с логированием
+// writeError — JSON error with logging
 func writeError(w http.ResponseWriter, status int, format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	log.Printf("[error] %s", msg)
@@ -37,7 +37,7 @@ func writeError(w http.ResponseWriter, status int, format string, args ...any) {
 
 // // // //
 
-// getFloat64 — извлекает float64 из map
+// getFloat64 — extracts float64 from map
 func getFloat64(m map[string]any, key string) (float64, bool) {
 	v, ok := m[key]
 	if !ok {
@@ -56,7 +56,7 @@ func getFloat64(m map[string]any, key string) (float64, bool) {
 	}
 }
 
-// getInt — извлекает int из map
+// getInt — extracts int from map
 func getInt(m map[string]any, key string) (int, bool) {
 	v, ok := m[key]
 	if !ok {
@@ -77,8 +77,8 @@ func getInt(m map[string]any, key string) (int, bool) {
 
 // // // //
 
-// ollamaFormatToResponseFormat — конвертирует Ollama format в OpenAI response_format.
-// "json" → {type: "json_object"}, schema-объект → {type: "json_schema", json_schema: ...}
+// ollamaFormatToResponseFormat — converts Ollama format to OpenAI response_format.
+// "json" → {type: "json_object"}, schema object → {type: "json_schema", json_schema: ...}
 func ollamaFormatToResponseFormat(format any) *openai.ResponseFormat {
 	switch f := format.(type) {
 	case string:
@@ -91,7 +91,7 @@ func ollamaFormatToResponseFormat(format any) *openai.ResponseFormat {
 	return nil
 }
 
-// detectImageMIME — определяет MIME-тип по magic bytes в начале base64-строки
+// detectImageMIME — detects MIME type by magic bytes at the start of base64 string
 func detectImageMIME(b64 string) string {
 	switch {
 	case strings.HasPrefix(b64, "/9j/"):
@@ -107,8 +107,8 @@ func detectImageMIME(b64 string) string {
 	}
 }
 
-// buildContentParts — строит content для OpenAI-запроса.
-// Без картинок возвращает строку; с картинками — []ContentPart (текст первым, потом картинки).
+// buildContentParts — builds content for OpenAI request.
+// Without images returns a string; with images — []ContentPart (text first, then images).
 func buildContentParts(text string, images []string) any {
 	if len(images) == 0 {
 		return text
@@ -125,7 +125,7 @@ func buildContentParts(text string, images []string) any {
 	return parts
 }
 
-// applyOllamaOptions — конвертирует Ollama options в поля OpenAI-запроса
+// applyOllamaOptions — converts Ollama options to OpenAI request fields
 func applyOllamaOptions(req *openai.ChatRequest, options map[string]any) {
 	if options == nil {
 		return

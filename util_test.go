@@ -185,12 +185,12 @@ func TestBuildContentParts_WithImages(t *testing.T) {
 		t.Fatalf("len = %d, want 3", len(parts))
 	}
 
-	// первая часть — текст
+	// first part — text
 	if parts[0].Type != "text" || parts[0].Text != "describe" {
 		t.Fatalf("parts[0] = %+v, want text/describe", parts[0])
 	}
 
-	// вторая — jpeg
+	// second — jpeg
 	if parts[1].Type != "image_url" || parts[1].ImageURL == nil {
 		t.Fatalf("parts[1] not image_url")
 	}
@@ -198,7 +198,7 @@ func TestBuildContentParts_WithImages(t *testing.T) {
 		t.Fatalf("parts[1].URL = %q", got)
 	}
 
-	// третья — png
+	// third — png
 	if parts[2].ImageURL.URL != "data:image/png;base64,iVBORbase64data" {
 		t.Fatalf("parts[2].URL = %q", parts[2].ImageURL.URL)
 	}
@@ -262,7 +262,7 @@ func TestApplyOllamaOptions_StopStrings(t *testing.T) {
 	}
 }
 
-// // // // бенчмарки // // // //
+// // // // benchmarks // // // //
 
 func BenchmarkDetectImageMIME(b *testing.B) {
 	samples := []string{"/9j/4AAQ", "iVBORw0K", "R0lGODlh", "UklGRlYA", "AAAA"}

@@ -1,38 +1,38 @@
 package openai
 
-// // // // запросы // // // //
+// // // // requests // // // //
 
-// Message — сообщение OpenAI (используется в ответах, Content всегда string)
+// Message — OpenAI message (used in responses, Content is always string)
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-// ContentPart — элемент мультимодального контента
+// ContentPart — multimodal content element
 type ContentPart struct {
 	Type     string    `json:"type"`
 	Text     string    `json:"text,omitempty"`
 	ImageURL *ImageURL `json:"image_url,omitempty"`
 }
 
-// ImageURL — data URL изображения
+// ImageURL — image data URL
 type ImageURL struct {
 	URL string `json:"url"`
 }
 
-// RequestMessage — сообщение в запросе (Content может быть string или []ContentPart)
+// RequestMessage — request message (Content can be string or []ContentPart)
 type RequestMessage struct {
 	Role    string `json:"role"`
 	Content any    `json:"content"`
 }
 
-// ResponseFormat — формат ответа (json_object / json_schema)
+// ResponseFormat — response format (json_object / json_schema)
 type ResponseFormat struct {
 	Type       string `json:"type"`
 	JSONSchema any    `json:"json_schema,omitempty"`
 }
 
-// ChatRequest — запрос к /api/chat/completions
+// ChatRequest — request to /api/chat/completions
 type ChatRequest struct {
 	Model            string           `json:"model"`
 	Messages         []RequestMessage `json:"messages"`
@@ -47,44 +47,44 @@ type ChatRequest struct {
 	ResponseFormat   *ResponseFormat  `json:"response_format,omitempty"`
 }
 
-// // // // ответы // // // //
+// // // // responses // // // //
 
-// ChatResponse — полный ответ (не streaming)
+// ChatResponse — full response (non-streaming)
 type ChatResponse struct {
 	Choices []ChatChoice `json:"choices"`
 }
 
-// ChatChoice — вариант ответа
+// ChatChoice — response choice
 type ChatChoice struct {
 	Message      Message `json:"message"`
 	FinishReason string  `json:"finish_reason"`
 }
 
-// StreamChunk — SSE-чанк при streaming
+// StreamChunk — SSE chunk during streaming
 type StreamChunk struct {
 	Choices []StreamChoice `json:"choices"`
 }
 
-// StreamChoice — вариант в стрим-чанке
+// StreamChoice — choice in a stream chunk
 type StreamChoice struct {
 	Delta        StreamDelta `json:"delta"`
 	FinishReason *string     `json:"finish_reason"`
 }
 
-// StreamDelta — дельта контента
+// StreamDelta — content delta
 type StreamDelta struct {
 	Role    string `json:"role,omitempty"`
 	Content string `json:"content,omitempty"`
 }
 
-// // // // модели // // // //
+// // // // models // // // //
 
-// ModelList — ответ GET /api/models
+// ModelList — GET /api/models response
 type ModelList struct {
 	Data []Model `json:"data"`
 }
 
-// Model — модель в формате OpenAI
+// Model — model in OpenAI format
 type Model struct {
 	ID     string `json:"id"`
 	Object string `json:"object"`

@@ -18,9 +18,9 @@ import (
 // // // // // // // // // //
 
 // handleTags — GET /api/tags
-// Список моделей из Open WebUI → формат Ollama.
-// L1: in-memory (cache.TagsTTL), L2: диск, L3: upstream.
-// tagsFetchMu защищает от thundering herd при cache miss.
+// Model list from Open WebUI → Ollama format.
+// L1: in-memory (cache.TagsTTL), L2: disk, L3: upstream.
+// tagsFetchMu prevents thundering herd on cache miss.
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	// L1: in-memory
 	s.modelsMu.RLock()
@@ -33,11 +33,11 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	}
 	s.modelsMu.RUnlock()
 
-	// один fetch за раз — остальные горутины ждут на локе
+	// one fetch at a time — other goroutines wait on the lock
 	s.tagsFetchMu.Lock()
 	defer s.tagsFetchMu.Unlock()
 
-	// повторная проверка L1: другая горутина могла уже загрузить
+	// L1 recheck: another goroutine may have already loaded
 	s.modelsMu.RLock()
 	if s.modelsCache != nil && time.Since(s.modelsCacheAt) < s.tagsTTL {
 		cached := s.modelsCache
@@ -48,7 +48,7 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	}
 	s.modelsMu.RUnlock()
 
-	// L2: диск
+	// L2: disk
 	if disk := cache.ReadTags(s.cacheDir); disk != nil && time.Now().Before(disk.ExpiresAt) {
 		s.modelsMu.Lock()
 		s.modelsCache = disk.Models
@@ -94,7 +94,7 @@ func (s *Server) handleShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// диск
+	// disk
 	if disk := cache.ReadShow(s.cacheDir, req.Model); disk != nil && time.Now().Before(disk.ExpiresAt) {
 		log.Printf("[show] from disk cache: %s", req.Model)
 		writeJSON(w, http.StatusOK, disk.Response)
@@ -117,7 +117,7 @@ func (s *Server) handlePs(w http.ResponseWriter, r *http.Request) {
 
 // // // //
 
-// buildShowResponse — формирует stub-ответ для модели
+// buildShowResponse — builds a stub response for a model
 func buildShowResponse(model string) ollama.ShowResponse {
 	now := time.Now().UTC().Format(time.RFC3339)
 	return ollama.ShowResponse{
@@ -139,7 +139,7 @@ func buildShowResponse(model string) ollama.ShowResponse {
 	}
 }
 
-// fetchModels — запрос моделей из Open WebUI → формат Ollama
+// fetchModels — fetches models from Open WebUI → Ollama format
 func (s *Server) fetchModels(ctx context.Context) ([]ollama.ModelInfo, error) {
 	token, err := s.auth.EnsureToken(ctx)
 	if err != nil {
@@ -165,7 +165,7 @@ func (s *Server) fetchModels(ctx context.Context) ([]ollama.ModelInfo, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 
-	// ответ может быть {data: [...]} или [...]
+	// response can be {data: [...]} or [...]
 	var models []openai.Model
 
 	var wrapper openai.ModelList

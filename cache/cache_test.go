@@ -63,7 +63,7 @@ func TestRead_FileTooShort(t *testing.T) {
 		t.Fatal("expected nil for too-short file")
 	}
 
-	// файл должен быть удалён
+	// file should be removed
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("invalid file should be removed")
 	}
@@ -77,7 +77,7 @@ func TestRead_WrongMagic(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	// читаем с другими magic bytes
+	// read with different magic bytes
 	wrongMagic := [2]byte{0xFF, 0xFF}
 	got := Read[SessionObj](path, wrongMagic)
 	if got != nil {
@@ -93,9 +93,9 @@ func TestRead_CorruptedData(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	// портим данные
+	// corrupt the data
 	data, _ := os.ReadFile(path)
-	data[20] ^= 0xFF // меняем байт в ciphertext
+	data[20] ^= 0xFF // flip a byte in ciphertext
 	os.WriteFile(path, data, 0o600)
 
 	got := Read[SessionObj](path, magicSession)
@@ -129,7 +129,7 @@ func TestWrite_FilePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	// 0o600 — только owner read/write
+	// 0o600 — owner read/write only
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Fatalf("permissions = %o, want 600", perm)
 	}
@@ -251,7 +251,7 @@ func TestShowReadWrite_DifferentModels(t *testing.T) {
 	}
 }
 
-// // // // бенчмарки // // // //
+// // // // benchmarks // // // //
 
 func BenchmarkCacheWrite(b *testing.B) {
 	dir := b.TempDir()

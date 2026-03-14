@@ -62,7 +62,7 @@ cyan() {
 #############################################################################
           ################[ Checking the environment ]################
 
-# Проверяем наличие папки GIT
+# Check if GIT directory exists
 if [ ! -d "$hooks_dir" ]; then
     error "Folder '$hooks_dir' not found."
     exit 1

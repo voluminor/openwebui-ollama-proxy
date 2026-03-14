@@ -18,8 +18,8 @@ import (
 
 // // // // // // // // // //
 
-// Obj — управление авторизацией в Open WebUI.
-// Хранит JWT, обновляет при истечении, кеширует сессию на диск.
+// Obj — Open WebUI authorization manager.
+// Stores JWT, refreshes on expiry, caches session to disk.
 type Obj struct {
 	baseURL  string
 	email    string
@@ -34,7 +34,7 @@ type Obj struct {
 
 // // // //
 
-// New — создаёт экземпляр Obj
+// New — creates an Obj instance
 func New(baseURL, email, password, cacheDir string) *Obj {
 	return &Obj{
 		baseURL:  strings.TrimRight(baseURL, "/"),
@@ -47,14 +47,14 @@ func New(baseURL, email, password, cacheDir string) *Obj {
 	}
 }
 
-// BaseURL — базовый URL Open WebUI
+// BaseURL — Open WebUI base URL
 func (a *Obj) BaseURL() string {
 	return a.baseURL
 }
 
 // // // //
 
-// loadSession — загружает токен из бинарного кеша
+// loadSession — loads token from binary cache
 func (a *Obj) loadSession() error {
 	s := cache.ReadSession(a.cacheDir)
 	if s == nil {
@@ -70,7 +70,7 @@ func (a *Obj) loadSession() error {
 	return nil
 }
 
-// saveSession — сохраняет токен в бинарный кеш
+// saveSession — saves token to binary cache
 func (a *Obj) saveSession() error {
 	return cache.WriteSession(a.cacheDir, cache.SessionObj{
 		Token:     a.token,
@@ -80,7 +80,7 @@ func (a *Obj) saveSession() error {
 	})
 }
 
-// parseJWTExpiry — извлекает exp из JWT без верификации подписи
+// parseJWTExpiry — extracts exp from JWT without signature verification
 func parseJWTExpiry(token string) (time.Time, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) < 2 {
@@ -118,7 +118,7 @@ func parseJWTExpiry(token string) (time.Time, error) {
 
 // // // //
 
-// EnsureToken — возвращает актуальный JWT, при необходимости логинится
+// EnsureToken — returns a valid JWT, re-authenticating if needed
 func (a *Obj) EnsureToken(ctx context.Context) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -127,7 +127,7 @@ func (a *Obj) EnsureToken(ctx context.Context) (string, error) {
 		_ = a.loadSession()
 	}
 
-	// токен ещё валиден
+	// token is still valid
 	if a.token != "" && time.Until(a.tokenExpiry) > 30*time.Second {
 		return a.token, nil
 	}
@@ -139,7 +139,7 @@ func (a *Obj) EnsureToken(ctx context.Context) (string, error) {
 	return a.token, nil
 }
 
-// login — авторизация через POST /api/v1/auths/signin
+// login — authenticates via POST /api/v1/auths/signin
 func (a *Obj) login(ctx context.Context) error {
 	payload, _ := json.Marshal(map[string]string{
 		"email":    a.email,
@@ -175,7 +175,7 @@ func (a *Obj) login(ctx context.Context) error {
 
 	exp, err := parseJWTExpiry(result.Token)
 	if err != nil || exp.IsZero() {
-		// не удалось распарсить — fallback 24 часа
+		// failed to parse — fallback 24 hours
 		exp = time.Now().Add(24 * time.Hour)
 	}
 

@@ -34,7 +34,7 @@ Features:
 
 // // // //
 
-// printUsage — вывод справки (вызывается при -h / --help)
+// printUsage — prints usage (called on -h / --help)
 func printUsage() {
 	fmt.Fprintf(os.Stderr, "%s %s  (build: %s)\n\n", target.GlobalName, target.GlobalVersion, buildHash())
 	fmt.Fprintf(os.Stderr, "Usage:\n  %s --openwebui-url <url> --email <email> --password <pass> [flags]\n\n", target.GlobalName)
@@ -42,7 +42,7 @@ func printUsage() {
 	flag.PrintDefaults()
 }
 
-// printInfo — вывод информации о сборке в указанном формате
+// printInfo — prints build info in the specified format
 func printInfo(format string) {
 	build := buildHash()
 	switch format {
@@ -64,7 +64,7 @@ func printInfo(format string) {
 	}
 }
 
-// buildHash — последние 8 символов GlobalHash
+// buildHash — last 8 characters of GlobalHash
 func buildHash() string {
 	h := target.GlobalHash
 	if len(h) > 8 {
@@ -76,7 +76,7 @@ func buildHash() string {
 // // // //
 
 func main() {
-	// флаги командной строки
+	// command-line flags
 	host := flag.String("host", "0.0.0.0", "listen host")
 	port := flag.Int("port", 11434, "server port")
 	openwebuiURL := flag.String("openwebui-url", "", "Open WebUI URL (required)")
@@ -99,7 +99,7 @@ func main() {
 	flag.Usage = printUsage
 	flag.Parse()
 
-	// инфо-режим: не требует обязательных флагов
+	// info mode: does not require mandatory flags
 	if *infoShort || *infoFmt != "" {
 		format := *infoFmt
 		if format == "" {
@@ -109,7 +109,7 @@ func main() {
 		return
 	}
 
-	// проверка обязательных параметров
+	// required parameters check
 	if *openwebuiURL == "" || *email == "" || *password == "" {
 		fmt.Fprintln(os.Stderr, "Error: required flags: --openwebui-url, --email, --password")
 		fmt.Fprintln(os.Stderr, "")
@@ -119,7 +119,7 @@ func main() {
 
 	a := auth.New(*openwebuiURL, *email, *password, *cacheDir)
 
-	// проверка доступности upstream и валидности креденшлов
+	// verify upstream availability and credentials
 	if _, err := a.EnsureToken(context.Background()); err != nil {
 		log.Fatalf("Upstream not available: %v", err)
 	}
@@ -133,7 +133,7 @@ func main() {
 		Handler: srv,
 	}
 
-	// graceful shutdown по SIGINT / SIGTERM
+	// graceful shutdown on SIGINT / SIGTERM
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

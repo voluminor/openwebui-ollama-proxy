@@ -69,7 +69,7 @@ func TestHandleShow(t *testing.T) {
 	srv := &Server{
 		cacheDir:    dir,
 		maxBodySize: 1 << 20,
-		showTTL:     0, // без кеширования
+		showTTL:     0, // no caching
 		mux:         http.NewServeMux(),
 	}
 	srv.mux.HandleFunc("POST /api/show", srv.handleShow)
@@ -158,7 +158,7 @@ func TestHandleEmbedNotSupported(t *testing.T) {
 	}
 }
 
-// // // // бенчмарки // // // //
+// // // // benchmarks // // // //
 
 func BenchmarkBuildShowResponse(b *testing.B) {
 	for i := 0; i < b.N; i++ {

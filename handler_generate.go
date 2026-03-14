@@ -18,7 +18,7 @@ import (
 // // // // // // // // // //
 
 // handleGenerate — POST /api/generate
-// Конвертирует prompt/system в messages и проксирует к Open WebUI.
+// Converts prompt/system into messages and proxies to Open WebUI.
 func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -35,7 +35,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// в Ollama stream по умолчанию true
+	// in Ollama, stream defaults to true
 	streaming := true
 	if req.Stream != nil {
 		streaming = *req.Stream
@@ -104,7 +104,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 
 // // // //
 
-// nonStreamGenerateResponse — обычный ответ → формат /api/generate
+// nonStreamGenerateResponse — non-streaming response → /api/generate format
 func (s *Server) nonStreamGenerateResponse(w http.ResponseWriter, body io.Reader, model string) {
 	data, _ := io.ReadAll(body)
 
@@ -131,7 +131,7 @@ func (s *Server) nonStreamGenerateResponse(w http.ResponseWriter, body io.Reader
 	})
 }
 
-// streamGenerateResponse — SSE → NDJSON в формате /api/generate
+// streamGenerateResponse — SSE → NDJSON in /api/generate format
 func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.ReadCloser, model string, idleTimeout time.Duration) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -189,7 +189,7 @@ func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.ReadClose
 		flusher.Flush()
 	}
 
-	// финальный чанк
+	// final chunk
 	duration := time.Since(startTime)
 	doneReason := "stop"
 	if finishReason != "" {

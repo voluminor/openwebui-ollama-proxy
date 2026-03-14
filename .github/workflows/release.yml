@@ -142,7 +142,7 @@ jobs:
           set -Eeuo pipefail
           mkdir -p dist
 
-          # формат: GOOS/GOARCH[/variant]
+          # format: GOOS/GOARCH[/variant]
           targets=(
             windows/amd64
             windows/arm64

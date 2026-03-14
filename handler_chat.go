@@ -18,7 +18,7 @@ import (
 // // // // // // // // // //
 
 // handleChat — POST /api/chat
-// Проксирует Ollama → OpenAI и обратно, streaming и non-streaming.
+// Proxies Ollama → OpenAI and back, streaming and non-streaming.
 func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -35,13 +35,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// в Ollama stream по умолчанию true
+	// in Ollama, stream defaults to true
 	streaming := true
 	if req.Stream != nil {
 		streaming = *req.Stream
 	}
 
-	// конвертируем Ollama → OpenAI; top-level system всегда идёт первым
+	// convert Ollama → OpenAI; top-level system always goes first
 	messages := make([]openai.RequestMessage, 0, len(req.Messages)+1)
 	if req.System != "" {
 		messages = append(messages, openai.RequestMessage{Role: "system", Content: req.System})
@@ -99,7 +99,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 
 // // // //
 
-// nonStreamChatResponse — обычный ответ от Open WebUI
+// nonStreamChatResponse — non-streaming response from Open WebUI
 func (s *Server) nonStreamChatResponse(w http.ResponseWriter, body io.Reader, model string) {
 	data, _ := io.ReadAll(body)
 
@@ -129,7 +129,7 @@ func (s *Server) nonStreamChatResponse(w http.ResponseWriter, body io.Reader, mo
 	})
 }
 
-// streamChatResponse — SSE → NDJSON в формате Ollama
+// streamChatResponse — SSE → NDJSON in Ollama format
 func (s *Server) streamChatResponse(w http.ResponseWriter, body io.ReadCloser, model string, idleTimeout time.Duration) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -190,7 +190,7 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.ReadCloser, m
 		flusher.Flush()
 	}
 
-	// финальный чанк
+	// final chunk
 	duration := time.Since(startTime)
 	doneReason := "stop"
 	if finishReason != "" {

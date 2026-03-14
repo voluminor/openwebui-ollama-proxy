@@ -24,7 +24,7 @@ func TestResponseRecorder_DefaultStatus(t *testing.T) {
 	w := httptest.NewRecorder()
 	rr := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 
-	// без вызова WriteHeader — статус по умолчанию 200
+	// without calling WriteHeader — default status 200
 	if rr.statusCode != http.StatusOK {
 		t.Fatalf("default status = %d, want %d", rr.statusCode, http.StatusOK)
 	}
@@ -35,7 +35,7 @@ func TestResponseRecorder_FirstWriteHeaderWins(t *testing.T) {
 	rr := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 
 	rr.WriteHeader(http.StatusCreated)
-	rr.WriteHeader(http.StatusInternalServerError) // повторный вызов не меняет
+	rr.WriteHeader(http.StatusInternalServerError) // repeated call does not change
 
 	if rr.statusCode != http.StatusCreated {
 		t.Fatalf("statusCode = %d, want %d (first call)", rr.statusCode, http.StatusCreated)
@@ -46,7 +46,7 @@ func TestResponseRecorder_Flush(t *testing.T) {
 	w := httptest.NewRecorder()
 	rr := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 
-	// httptest.ResponseRecorder реализует Flusher — не должно паниковать
+	// httptest.ResponseRecorder implements Flusher — should not panic
 	rr.Flush()
 }
 
@@ -64,14 +64,14 @@ func TestResponseRecorder_Unwrap(t *testing.T) {
 func TestRateLimiter_AllowsBurst(t *testing.T) {
 	rl := newRateLimiter(5) // 5 rps
 
-	// первые 5 запросов — burst
+	// first 5 requests — burst
 	for i := 0; i < 5; i++ {
 		if !rl.Allow() {
 			t.Fatalf("request %d rejected, expected allowed", i+1)
 		}
 	}
 
-	// 6-й должен быть отклонён
+	// 6th should be rejected
 	if rl.Allow() {
 		t.Fatal("6th request allowed, expected rejected")
 	}
@@ -80,7 +80,7 @@ func TestRateLimiter_AllowsBurst(t *testing.T) {
 func TestRateLimiter_RefillsOverTime(t *testing.T) {
 	rl := newRateLimiter(10) // 10 rps
 
-	// исчерпываем
+	// exhaust tokens
 	for i := 0; i < 10; i++ {
 		rl.Allow()
 	}
@@ -88,7 +88,7 @@ func TestRateLimiter_RefillsOverTime(t *testing.T) {
 		t.Fatal("should be exhausted")
 	}
 
-	// ждём 150ms → +1.5 токена → 1 запрос должен пройти
+	// wait 150ms → +1.5 tokens → 1 request should pass
 	time.Sleep(150 * time.Millisecond)
 	if !rl.Allow() {
 		t.Fatal("should refill after wait")
@@ -127,7 +127,7 @@ func TestServeHTTP_CORS(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// обычный запрос
+	// regular request
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -185,7 +185,7 @@ func TestServeHTTP_RateLimit(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// первые 2 — OK
+	// first 2 — OK
 	for i := 0; i < 2; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
@@ -195,7 +195,7 @@ func TestServeHTTP_RateLimit(t *testing.T) {
 		}
 	}
 
-	// 3-й — rate limited
+	// 3rd — rate limited
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -213,7 +213,7 @@ func TestServeHTTP_NoRateLimit(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// 100 запросов — все OK
+	// 100 requests — all OK
 	for i := 0; i < 100; i++ {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		w := httptest.NewRecorder()
@@ -297,7 +297,7 @@ func searchSubstr(s, sub string) bool {
 	return false
 }
 
-// // // // бенчмарки // // // //
+// // // // benchmarks // // // //
 
 func BenchmarkRateLimiter_Allow(b *testing.B) {
 	rl := newRateLimiter(1000000)

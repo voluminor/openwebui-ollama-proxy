@@ -10,7 +10,7 @@ import (
 
 // // // // // // // // // //
 
-// makeJWT — создаёт тестовый JWT с заданным exp
+// makeJWT — creates a test JWT with given exp
 func makeJWT(exp int64) string {
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 	claims := fmt.Sprintf(`{"sub":"user","exp":%d}`, exp)
@@ -34,7 +34,7 @@ func TestParseJWTExpiry_Valid(t *testing.T) {
 }
 
 func TestParseJWTExpiry_FloatExp(t *testing.T) {
-	// JSON числа декодируются как float64
+	// JSON numbers are decoded as float64
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`))
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"exp":1700000000}`))
 	token := header + "." + payload + ".sig"
@@ -49,15 +49,15 @@ func TestParseJWTExpiry_FloatExp(t *testing.T) {
 }
 
 func TestParseJWTExpiry_JsonNumber(t *testing.T) {
-	// симулируем json.Number — вручную кодируем
+	// simulate json.Number — manually encode
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`))
 	claims := map[string]any{"exp": json.Number("1700000000")}
 	claimsBytes, _ := json.Marshal(claims)
 	payload := base64.RawURLEncoding.EncodeToString(claimsBytes)
 	token := header + "." + payload + ".sig"
 
-	// parseJWTExpiry использует json.Unmarshal без UseNumber,
-	// поэтому exp будет float64, а не json.Number
+	// parseJWTExpiry uses json.Unmarshal without UseNumber,
+	// so exp will be float64, not json.Number
 	got, err := parseJWTExpiry(token)
 	if err != nil {
 		t.Fatalf("parseJWTExpiry: %v", err)
@@ -104,12 +104,12 @@ func TestParseJWTExpiry_NoExp(t *testing.T) {
 }
 
 func TestParseJWTExpiry_PaddingVariants(t *testing.T) {
-	// payload длины, требующей разного паддинга
+	// payload lengths requiring different padding
 	cases := []string{
-		`{"exp":1}`,       // 9 байт → base64 12 символов (len%4 == 0)
-		`{"exp":12}`,      // 10 байт → base64 14 символов (len%4 == 2)
-		`{"exp":123}`,     // 11 байт → base64 16 символов (len%4 == 0)
-		`{"exp":1234567}`, // 15 байт → base64 20 символов (len%4 == 0)
+		`{"exp":1}`,       // 9 bytes → base64 12 chars (len%4 == 0)
+		`{"exp":12}`,      // 10 bytes → base64 14 chars (len%4 == 2)
+		`{"exp":123}`,     // 11 bytes → base64 16 chars (len%4 == 0)
+		`{"exp":1234567}`, // 15 bytes → base64 20 chars (len%4 == 0)
 	}
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`))
 
@@ -132,7 +132,7 @@ func TestNew(t *testing.T) {
 	}
 }
 
-// // // // бенчмарки // // // //
+// // // // benchmarks // // // //
 
 func BenchmarkParseJWTExpiry(b *testing.B) {
 	token := makeJWT(time.Now().Add(24 * time.Hour).Unix())

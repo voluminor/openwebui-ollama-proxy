@@ -14,7 +14,7 @@ import (
 
 // // // // // // // // // //
 
-// Server — HTTP-сервер, имитирующий Ollama API
+// Server — HTTP server emulating the Ollama API
 type Server struct {
 	auth              *auth.Obj
 	cacheDir          string
@@ -25,21 +25,21 @@ type Server struct {
 	streamIdleTimeout time.Duration
 	corsOrigins       string
 	ollamaVersion     string
-	httpClient        *http.Client // streaming: без таймаута
-	httpClientShort   *http.Client // не-streaming: с таймаутом
+	httpClient        *http.Client // streaming: no timeout
+	httpClientShort   *http.Client // non-streaming: with timeout
 	mux               *http.ServeMux
 	rateLimiter       *rateLimiterObj
 
-	// in-memory кеш моделей (L1, поверх дискового)
+	// in-memory model cache (L1, on top of disk cache)
 	modelsMu      sync.RWMutex
 	modelsCache   []ollama.ModelInfo
 	modelsCacheAt time.Time
 
-	// защита от thundering herd при fetch моделей
+	// thundering herd protection for model fetching
 	tagsFetchMu sync.Mutex
 }
 
-// NewServer — создаёт сервер с роутингом
+// NewServer — creates a server with routing
 func NewServer(a *auth.Obj, cacheDir string, maxBodySize, maxErrorBody int64, tagsTTL, showTTL, timeout, streamIdleTimeout time.Duration, ollamaVersion, corsOrigins string, rateLimit int) *Server {
 	s := &Server{
 		auth:              a,
@@ -52,7 +52,7 @@ func NewServer(a *auth.Obj, cacheDir string, maxBodySize, maxErrorBody int64, ta
 		corsOrigins:       corsOrigins,
 		ollamaVersion:     ollamaVersion,
 		httpClient: &http.Client{
-			Timeout: 0, // streaming может длиться неограниченно
+			Timeout: 0, // streaming can last indefinitely
 		},
 		httpClientShort: &http.Client{
 			Timeout: timeout,
@@ -64,7 +64,7 @@ func NewServer(a *auth.Obj, cacheDir string, maxBodySize, maxErrorBody int64, ta
 		s.rateLimiter = newRateLimiter(float64(rateLimit))
 	}
 
-	// предзагрузка кеша моделей с диска при старте
+	// preload model cache from disk on startup
 	if cached := cache.ReadTags(cacheDir); cached != nil && time.Now().Before(cached.ExpiresAt) {
 		s.modelsCache = cached.Models
 		s.modelsCacheAt = cached.ExpiresAt.Add(-tagsTTL)
@@ -76,36 +76,36 @@ func NewServer(a *auth.Obj, cacheDir string, maxBodySize, maxErrorBody int64, ta
 
 // // // //
 
-// setupRoutes — регистрирует маршруты
+// setupRoutes — registers routes
 func (s *Server) setupRoutes() {
 	s.mux.HandleFunc("/", s.handleRoot)
 
 	s.mux.HandleFunc("GET /api/version", s.handleVersion)
 
-	// модели
+	// models
 	s.mux.HandleFunc("GET /api/tags", s.handleTags)
 	s.mux.HandleFunc("POST /api/show", s.handleShow)
 	s.mux.HandleFunc("GET /api/ps", s.handlePs)
 
-	// чат и генерация
+	// chat and generation
 	s.mux.HandleFunc("POST /api/chat", s.handleChat)
 	s.mux.HandleFunc("POST /api/generate", s.handleGenerate)
 
-	// запрещённые операции
+	// forbidden operations
 	s.mux.HandleFunc("POST /api/pull", s.handleForbidden)
 	s.mux.HandleFunc("POST /api/push", s.handleForbidden)
 	s.mux.HandleFunc("POST /api/create", s.handleForbidden)
 	s.mux.HandleFunc("DELETE /api/delete", s.handleForbidden)
 	s.mux.HandleFunc("POST /api/copy", s.handleForbidden)
 
-	// embeddings — не поддерживаются
+	// embeddings — not supported
 	s.mux.HandleFunc("POST /api/embed", s.handleEmbedNotSupported)
 	s.mux.HandleFunc("POST /api/embeddings", s.handleEmbedNotSupported)
 }
 
 // // // //
 
-// ServeHTTP — реализует http.Handler; CORS, rate limit, логирование
+// ServeHTTP — implements http.Handler; CORS, rate limit, logging
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CORS
 	if s.corsOrigins != "" {
@@ -132,7 +132,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // // // //
 
-// responseRecorder — обёртка для захвата status code
+// responseRecorder — wrapper for capturing status code
 type responseRecorder struct {
 	http.ResponseWriter
 	statusCode  int
@@ -159,7 +159,7 @@ func (rr *responseRecorder) Unwrap() http.ResponseWriter {
 
 // // // //
 
-// rateLimiterObj — token bucket без внешних зависимостей
+// rateLimiterObj — token bucket without external dependencies
 type rateLimiterObj struct {
 	mu       sync.Mutex
 	tokens   float64
@@ -199,7 +199,7 @@ func (rl *rateLimiterObj) String() string {
 	return fmt.Sprintf("%.0f rps", rl.rate)
 }
 
-// handleRoot — health check (GET / и HEAD /)
+// handleRoot — health check (GET / and HEAD /)
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
