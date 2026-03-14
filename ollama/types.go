@@ -4,8 +4,9 @@ package ollama
 
 // Message — сообщение Ollama
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	Images  []string `json:"images,omitempty"`
 }
 
 // ChatRequest — запрос POST /api/chat
@@ -24,6 +25,7 @@ type GenerateRequest struct {
 	Model     string         `json:"model"`
 	Prompt    string         `json:"prompt"`
 	System    string         `json:"system,omitempty"`
+	Images    []string       `json:"images,omitempty"`
 	Stream    *bool          `json:"stream,omitempty"`
 	Options   map[string]any `json:"options,omitempty"`
 	Format    any            `json:"format,omitempty"`

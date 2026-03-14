@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"openwebui-ollama-proxy/openai"
 )
@@ -93,6 +94,40 @@ func ollamaFormatToResponseFormat(format any) *openai.ResponseFormat {
 		return &openai.ResponseFormat{Type: "json_schema", JSONSchema: f}
 	}
 	return nil
+}
+
+// detectImageMIME — определяет MIME-тип по magic bytes в начале base64-строки
+func detectImageMIME(b64 string) string {
+	switch {
+	case strings.HasPrefix(b64, "/9j/"):
+		return "image/jpeg"
+	case strings.HasPrefix(b64, "iVBOR"):
+		return "image/png"
+	case strings.HasPrefix(b64, "R0lGO"):
+		return "image/gif"
+	case strings.HasPrefix(b64, "UklGR"):
+		return "image/webp"
+	default:
+		return "image/jpeg"
+	}
+}
+
+// buildContentParts — строит content для OpenAI-запроса.
+// Без картинок возвращает строку; с картинками — []ContentPart (текст первым, потом картинки).
+func buildContentParts(text string, images []string) any {
+	if len(images) == 0 {
+		return text
+	}
+	parts := make([]openai.ContentPart, 0, 1+len(images))
+	parts = append(parts, openai.ContentPart{Type: "text", Text: text})
+	for _, img := range images {
+		mime := detectImageMIME(img)
+		parts = append(parts, openai.ContentPart{
+			Type:     "image_url",
+			ImageURL: &openai.ImageURL{URL: "data:" + mime + ";base64," + img},
+		})
+	}
+	return parts
 }
 
 // applyOllamaOptions — конвертирует Ollama options в поля OpenAI-запроса

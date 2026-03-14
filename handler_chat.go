@@ -42,12 +42,12 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// конвертируем Ollama → OpenAI; top-level system всегда идёт первым
-	messages := make([]openai.Message, 0, len(req.Messages)+1)
+	messages := make([]openai.RequestMessage, 0, len(req.Messages)+1)
 	if req.System != "" {
-		messages = append(messages, openai.Message{Role: "system", Content: req.System})
+		messages = append(messages, openai.RequestMessage{Role: "system", Content: req.System})
 	}
 	for _, m := range req.Messages {
-		messages = append(messages, openai.Message{Role: m.Role, Content: m.Content})
+		messages = append(messages, openai.RequestMessage{Role: m.Role, Content: buildContentParts(m.Content, m.Images)})
 	}
 
 	oaiReq := openai.ChatRequest{

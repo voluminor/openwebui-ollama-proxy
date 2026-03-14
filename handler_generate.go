@@ -41,13 +41,13 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		streaming = *req.Stream
 	}
 
-	// prompt + system → messages
-	var messages []openai.Message
+	// prompt + system + images → messages
+	var messages []openai.RequestMessage
 	if req.System != "" {
-		messages = append(messages, openai.Message{Role: "system", Content: req.System})
+		messages = append(messages, openai.RequestMessage{Role: "system", Content: req.System})
 	}
-	if req.Prompt != "" {
-		messages = append(messages, openai.Message{Role: "user", Content: req.Prompt})
+	if req.Prompt != "" || len(req.Images) > 0 {
+		messages = append(messages, openai.RequestMessage{Role: "user", Content: buildContentParts(req.Prompt, req.Images)})
 	}
 
 	if len(messages) == 0 {
