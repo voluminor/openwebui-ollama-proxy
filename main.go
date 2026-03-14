@@ -36,7 +36,7 @@ func main() {
 	}
 
 	a := auth.New(*openwebuiURL, *email, *password, *cacheDir)
-	srv := NewServer(a)
+	srv := NewServer(a, *cacheDir)
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	httpServer := &http.Server{

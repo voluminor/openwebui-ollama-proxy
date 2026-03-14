@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"openwebui-ollama-proxy/cache"
 )
 
 // // // // // // // // // //
@@ -30,14 +30,6 @@ type Obj struct {
 	token       string
 	tokenExpiry time.Time
 	httpClient  *http.Client
-}
-
-// Session — данные сессии для кеша на диск
-type Session struct {
-	Token   string    `json:"token"`
-	Expiry  time.Time `json:"expiry"`
-	Email   string    `json:"email"`
-	BaseURL string    `json:"base_url"`
 }
 
 // // // //
@@ -62,22 +54,11 @@ func (a *Obj) BaseURL() string {
 
 // // // //
 
-// sessionPath — путь к файлу сессии
-func (a *Obj) sessionPath() string {
-	return filepath.Join(a.cacheDir, "session.json")
-}
-
-// loadSession — загружает токен из файла кеша
+// loadSession — загружает токен из бинарного кеша
 func (a *Obj) loadSession() error {
-	f, err := os.Open(a.sessionPath())
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	var s Session
-	if err := json.NewDecoder(f).Decode(&s); err != nil {
-		return err
+	s := cache.ReadSession(a.cacheDir)
+	if s == nil {
+		return errors.New("no cached session")
 	}
 
 	if s.BaseURL != a.baseURL || s.Email != a.email {
@@ -85,25 +66,17 @@ func (a *Obj) loadSession() error {
 	}
 
 	a.token = s.Token
-	a.tokenExpiry = s.Expiry
+	a.tokenExpiry = s.ExpiresAt
 	return nil
 }
 
-// saveSession — сохраняет токен в файл кеша
+// saveSession — сохраняет токен в бинарный кеш
 func (a *Obj) saveSession() error {
-	_ = os.MkdirAll(a.cacheDir, 0o755)
-
-	f, err := os.Create(a.sessionPath())
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	return json.NewEncoder(f).Encode(Session{
-		Token:   a.token,
-		Expiry:  a.tokenExpiry,
-		Email:   a.email,
-		BaseURL: a.baseURL,
+	return cache.WriteSession(a.cacheDir, cache.SessionObj{
+		Token:     a.token,
+		ExpiresAt: a.tokenExpiry,
+		Email:     a.email,
+		BaseURL:   a.baseURL,
 	})
 }
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"openwebui-ollama-proxy/cache"
 	"openwebui-ollama-proxy/ollama"
 	"openwebui-ollama-proxy/openai"
 )
@@ -17,19 +18,32 @@ import (
 // // // // // // // // // //
 
 // handleTags — GET /api/tags
-// Список моделей из Open WebUI → формат Ollama. Кеш 10 минут.
+// Список моделей из Open WebUI → формат Ollama.
+// L1: in-memory (cache.TagsTTL), L2: диск, L3: upstream.
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
-	// пробуем из кеша
+	// L1: in-memory
 	s.modelsMu.RLock()
-	if s.modelsCache != nil && time.Since(s.modelsCacheAt) < modelsCacheTTL {
+	if s.modelsCache != nil && time.Since(s.modelsCacheAt) < cache.TagsTTL {
 		cached := s.modelsCache
 		s.modelsMu.RUnlock()
-		log.Printf("[tags] from cache, %d models", len(cached))
+		log.Printf("[tags] from memory cache, %d models", len(cached))
 		writeJSON(w, http.StatusOK, ollama.TagsResponse{Models: cached})
 		return
 	}
 	s.modelsMu.RUnlock()
 
+	// L2: диск
+	if disk := cache.ReadTags(s.cacheDir); disk != nil && time.Now().Before(disk.ExpiresAt) {
+		s.modelsMu.Lock()
+		s.modelsCache = disk.Models
+		s.modelsCacheAt = disk.ExpiresAt.Add(-cache.TagsTTL)
+		s.modelsMu.Unlock()
+		log.Printf("[tags] from disk cache, %d models", len(disk.Models))
+		writeJSON(w, http.StatusOK, ollama.TagsResponse{Models: disk.Models})
+		return
+	}
+
+	// L3: upstream
 	models, err := s.fetchModels(r.Context())
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "%v", err)
@@ -41,11 +55,15 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	s.modelsCacheAt = time.Now()
 	s.modelsMu.Unlock()
 
-	log.Printf("[tags] loaded %d models, cached for %v", len(models), modelsCacheTTL)
+	if err := cache.WriteTags(s.cacheDir, models); err != nil {
+		log.Printf("[tags] disk cache write: %v", err)
+	}
+
+	log.Printf("[tags] fetched %d models from upstream, cached for %v", len(models), cache.TagsTTL)
 	writeJSON(w, http.StatusOK, ollama.TagsResponse{Models: models})
 }
 
-// handleShow — POST /api/show (заглушка)
+// handleShow — POST /api/show
 func (s *Server) handleShow(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
 
@@ -60,24 +78,20 @@ func (s *Server) handleShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	writeJSON(w, http.StatusOK, ollama.ShowResponse{
-		Name:       req.Model,
-		Model:      req.Model,
-		ModifiedAt: now,
-		Size:       0,
-		Digest:     fmt.Sprintf("proxy-%s", req.Model),
-		Details: ollama.ModelDetails{
-			Format:            "proxy",
-			Family:            "unknown",
-			Families:          []string{},
-			ParameterSize:     "unknown",
-			QuantizationLevel: "unknown",
-		},
-		Modelfile:  fmt.Sprintf("FROM %s", req.Model),
-		Parameters: "",
-		Template:   "{{ .Prompt }}",
-	})
+	// диск
+	if disk := cache.ReadShow(s.cacheDir, req.Model); disk != nil && time.Now().Before(disk.ExpiresAt) {
+		log.Printf("[show] from disk cache: %s", req.Model)
+		writeJSON(w, http.StatusOK, disk.Response)
+		return
+	}
+
+	resp := buildShowResponse(req.Model)
+
+	if err := cache.WriteShow(s.cacheDir, req.Model, resp); err != nil {
+		log.Printf("[show] disk cache write: %v", err)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handlePs — GET /api/ps
@@ -86,6 +100,28 @@ func (s *Server) handlePs(w http.ResponseWriter, r *http.Request) {
 }
 
 // // // //
+
+// buildShowResponse — формирует stub-ответ для модели
+func buildShowResponse(model string) ollama.ShowResponse {
+	now := time.Now().UTC().Format(time.RFC3339)
+	return ollama.ShowResponse{
+		Name:       model,
+		Model:      model,
+		ModifiedAt: now,
+		Size:       0,
+		Digest:     fmt.Sprintf("proxy-%s", model),
+		Details: ollama.ModelDetails{
+			Format:            "proxy",
+			Family:            "unknown",
+			Families:          []string{},
+			ParameterSize:     "unknown",
+			QuantizationLevel: "unknown",
+		},
+		Modelfile:  fmt.Sprintf("FROM %s", model),
+		Parameters: "",
+		Template:   "{{ .Prompt }}",
+	}
+}
 
 // fetchModels — запрос моделей из Open WebUI → формат Ollama
 func (s *Server) fetchModels(ctx context.Context) ([]ollama.ModelInfo, error) {

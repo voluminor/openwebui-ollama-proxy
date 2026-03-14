@@ -7,36 +7,41 @@ import (
 	"time"
 
 	"openwebui-ollama-proxy/auth"
+	"openwebui-ollama-proxy/cache"
 	"openwebui-ollama-proxy/ollama"
 )
 
 // // // // // // // // // //
 
-const modelsCacheTTL = 10 * time.Minute
-
-// // // //
-
 // Server — HTTP-сервер, имитирующий Ollama API
 type Server struct {
 	auth       *auth.Obj
+	cacheDir   string
 	httpClient *http.Client
 	mux        *http.ServeMux
 
-	// кеш моделей
+	// in-memory кеш моделей (L1, поверх дискового)
 	modelsMu      sync.RWMutex
 	modelsCache   []ollama.ModelInfo
 	modelsCacheAt time.Time
 }
 
 // NewServer — создаёт сервер с роутингом
-func NewServer(a *auth.Obj) *Server {
+func NewServer(a *auth.Obj, cacheDir string) *Server {
 	s := &Server{
-		auth: a,
+		auth:     a,
+		cacheDir: cacheDir,
 		httpClient: &http.Client{
 			// без таймаута — streaming-запросы могут длиться долго
 			Timeout: 0,
 		},
 		mux: http.NewServeMux(),
+	}
+
+	// предзагрузка кеша моделей с диска при старте
+	if cached := cache.ReadTags(cacheDir); cached != nil && time.Now().Before(cached.ExpiresAt) {
+		s.modelsCache = cached.Models
+		s.modelsCacheAt = cached.ExpiresAt.Add(-cache.TagsTTL)
 	}
 
 	s.setupRoutes()
