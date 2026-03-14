@@ -15,10 +15,11 @@ import (
 
 // Server — HTTP-сервер, имитирующий Ollama API
 type Server struct {
-	auth       *auth.Obj
-	cacheDir   string
-	httpClient *http.Client
-	mux        *http.ServeMux
+	auth            *auth.Obj
+	cacheDir        string
+	httpClient      *http.Client // streaming: без таймаута
+	httpClientShort *http.Client // не-streaming: с таймаутом
+	mux             *http.ServeMux
 
 	// in-memory кеш моделей (L1, поверх дискового)
 	modelsMu      sync.RWMutex
@@ -32,8 +33,10 @@ func NewServer(a *auth.Obj, cacheDir string) *Server {
 		auth:     a,
 		cacheDir: cacheDir,
 		httpClient: &http.Client{
-			// без таймаута — streaming-запросы могут длиться долго
-			Timeout: 0,
+			Timeout: 0, // streaming может длиться неограниченно
+		},
+		httpClientShort: &http.Client{
+			Timeout: 30 * time.Second,
 		},
 		mux: http.NewServeMux(),
 	}

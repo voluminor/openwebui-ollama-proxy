@@ -136,7 +136,7 @@ func (s *Server) fetchModels(ctx context.Context) ([]ollama.ModelInfo, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := s.httpClientShort.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("Open WebUI request: %w", err)
 	}
