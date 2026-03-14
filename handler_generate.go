@@ -90,13 +90,13 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		writeError(w, resp.StatusCode, "Open WebUI: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, s.maxErrorBody))
+		writeError(w, resp.StatusCode, "Open WebUI: %s: %s", resp.Status, strings.TrimSpace(string(errBody)))
 		return
 	}
 
 	if streaming {
-		s.streamGenerateResponse(w, resp.Body, req.Model)
+		s.streamGenerateResponse(w, resp.Body, req.Model, s.streamIdleTimeout)
 	} else {
 		s.nonStreamGenerateResponse(w, resp.Body, req.Model)
 	}
@@ -132,7 +132,7 @@ func (s *Server) nonStreamGenerateResponse(w http.ResponseWriter, body io.Reader
 }
 
 // streamGenerateResponse — SSE → NDJSON в формате /api/generate
-func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.Reader, model string) {
+func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.ReadCloser, model string, idleTimeout time.Duration) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "streaming not supported")
@@ -146,7 +146,7 @@ func (s *Server) streamGenerateResponse(w http.ResponseWriter, body io.Reader, m
 	startTime := time.Now()
 	var finishReason string
 
-	events := readSSEStream(body)
+	events := readSSEStream(body, idleTimeout)
 	for event := range events {
 		if event.Err != nil {
 			log.Printf("[generate/stream] SSE read error: %v", event.Err)

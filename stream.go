@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"time"
 
 	"openwebui-ollama-proxy/openai"
 )
@@ -20,18 +21,32 @@ type SSEEvent struct {
 
 // // // //
 
-// readSSEStream — читает SSE-поток и отдаёт события через канал
-func readSSEStream(body io.Reader) <-chan SSEEvent {
+// readSSEStream — читает SSE-поток и отдаёт события через канал.
+// idleTimeout > 0 закрывает body при отсутствии данных.
+func readSSEStream(body io.ReadCloser, idleTimeout time.Duration) <-chan SSEEvent {
 	ch := make(chan SSEEvent, 16)
 
 	go func() {
 		defer close(ch)
+
+		// idle timeout: при срабатывании закрываем body → scanner.Scan() вернёт ошибку
+		var timer *time.Timer
+		if idleTimeout > 0 {
+			timer = time.AfterFunc(idleTimeout, func() {
+				body.Close()
+			})
+			defer timer.Stop()
+		}
 
 		scanner := bufio.NewScanner(body)
 		// буфер до 1 МБ для длинных строк
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 
 		for scanner.Scan() {
+			if timer != nil {
+				timer.Reset(idleTimeout)
+			}
+
 			line := scanner.Text()
 
 			if line == "" {

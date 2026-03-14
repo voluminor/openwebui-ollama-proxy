@@ -85,13 +85,13 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		writeError(w, resp.StatusCode, "Open WebUI: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, s.maxErrorBody))
+		writeError(w, resp.StatusCode, "Open WebUI: %s: %s", resp.Status, strings.TrimSpace(string(errBody)))
 		return
 	}
 
 	if streaming {
-		s.streamChatResponse(w, resp.Body, req.Model)
+		s.streamChatResponse(w, resp.Body, req.Model, s.streamIdleTimeout)
 	} else {
 		s.nonStreamChatResponse(w, resp.Body, req.Model)
 	}
@@ -130,7 +130,7 @@ func (s *Server) nonStreamChatResponse(w http.ResponseWriter, body io.Reader, mo
 }
 
 // streamChatResponse — SSE → NDJSON в формате Ollama
-func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model string) {
+func (s *Server) streamChatResponse(w http.ResponseWriter, body io.ReadCloser, model string, idleTimeout time.Duration) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "streaming not supported")
@@ -144,7 +144,7 @@ func (s *Server) streamChatResponse(w http.ResponseWriter, body io.Reader, model
 	startTime := time.Now()
 	var finishReason string
 
-	events := readSSEStream(body)
+	events := readSSEStream(body, idleTimeout)
 	for event := range events {
 		if event.Err != nil {
 			log.Printf("[chat/stream] SSE read error: %v", event.Err)

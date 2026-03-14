@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -15,31 +16,41 @@ import (
 
 // Server — HTTP-сервер, имитирующий Ollama API
 type Server struct {
-	auth            *auth.Obj
-	cacheDir        string
-	maxBodySize     int64
-	tagsTTL         time.Duration
-	showTTL         time.Duration
-	ollamaVersion   string
-	httpClient      *http.Client // streaming: без таймаута
-	httpClientShort *http.Client // не-streaming: с таймаутом
-	mux             *http.ServeMux
+	auth              *auth.Obj
+	cacheDir          string
+	maxBodySize       int64
+	maxErrorBody      int64
+	tagsTTL           time.Duration
+	showTTL           time.Duration
+	streamIdleTimeout time.Duration
+	corsOrigins       string
+	ollamaVersion     string
+	httpClient        *http.Client // streaming: без таймаута
+	httpClientShort   *http.Client // не-streaming: с таймаутом
+	mux               *http.ServeMux
+	rateLimiter       *rateLimiterObj
 
 	// in-memory кеш моделей (L1, поверх дискового)
 	modelsMu      sync.RWMutex
 	modelsCache   []ollama.ModelInfo
 	modelsCacheAt time.Time
+
+	// защита от thundering herd при fetch моделей
+	tagsFetchMu sync.Mutex
 }
 
 // NewServer — создаёт сервер с роутингом
-func NewServer(a *auth.Obj, cacheDir string, maxBodySize int64, tagsTTL, showTTL, timeout time.Duration, ollamaVersion string) *Server {
+func NewServer(a *auth.Obj, cacheDir string, maxBodySize, maxErrorBody int64, tagsTTL, showTTL, timeout, streamIdleTimeout time.Duration, ollamaVersion, corsOrigins string, rateLimit int) *Server {
 	s := &Server{
-		auth:          a,
-		cacheDir:      cacheDir,
-		maxBodySize:   maxBodySize,
-		tagsTTL:       tagsTTL,
-		showTTL:       showTTL,
-		ollamaVersion: ollamaVersion,
+		auth:              a,
+		cacheDir:          cacheDir,
+		maxBodySize:       maxBodySize,
+		maxErrorBody:      maxErrorBody,
+		tagsTTL:           tagsTTL,
+		showTTL:           showTTL,
+		streamIdleTimeout: streamIdleTimeout,
+		corsOrigins:       corsOrigins,
+		ollamaVersion:     ollamaVersion,
 		httpClient: &http.Client{
 			Timeout: 0, // streaming может длиться неограниченно
 		},
@@ -47,6 +58,10 @@ func NewServer(a *auth.Obj, cacheDir string, maxBodySize int64, tagsTTL, showTTL
 			Timeout: timeout,
 		},
 		mux: http.NewServeMux(),
+	}
+
+	if rateLimit > 0 {
+		s.rateLimiter = newRateLimiter(float64(rateLimit))
 	}
 
 	// предзагрузка кеша моделей с диска при старте
@@ -90,14 +105,98 @@ func (s *Server) setupRoutes() {
 
 // // // //
 
-// ServeHTTP — реализует http.Handler, логирует запросы
+// ServeHTTP — реализует http.Handler; CORS, rate limit, логирование
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// CORS
+	if s.corsOrigins != "" {
+		w.Header().Set("Access-Control-Allow-Origin", s.corsOrigins)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+	}
+
+	// rate limit
+	if s.rateLimiter != nil && !s.rateLimiter.Allow() {
+		writeError(w, http.StatusTooManyRequests, "rate limit exceeded")
+		return
+	}
+
 	start := time.Now()
-	log.Printf("[%s] %s %s", r.RemoteAddr, r.Method, r.URL.Path)
+	rr := &responseRecorder{ResponseWriter: w, statusCode: http.StatusOK}
+	s.mux.ServeHTTP(rr, r)
+	log.Printf("[%s] %s %s %d %v", r.RemoteAddr, r.Method, r.URL.Path, rr.statusCode, time.Since(start))
+}
 
-	s.mux.ServeHTTP(w, r)
+// // // //
 
-	log.Printf("[%s] %s %s — %v", r.RemoteAddr, r.Method, r.URL.Path, time.Since(start))
+// responseRecorder — обёртка для захвата status code
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode  int
+	headersSent bool
+}
+
+func (rr *responseRecorder) WriteHeader(code int) {
+	if !rr.headersSent {
+		rr.statusCode = code
+		rr.headersSent = true
+	}
+	rr.ResponseWriter.WriteHeader(code)
+}
+
+func (rr *responseRecorder) Flush() {
+	if f, ok := rr.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (rr *responseRecorder) Unwrap() http.ResponseWriter {
+	return rr.ResponseWriter
+}
+
+// // // //
+
+// rateLimiterObj — token bucket без внешних зависимостей
+type rateLimiterObj struct {
+	mu       sync.Mutex
+	tokens   float64
+	maxBurst float64
+	rate     float64 // tokens/sec
+	lastTime time.Time
+}
+
+func newRateLimiter(rps float64) *rateLimiterObj {
+	return &rateLimiterObj{
+		tokens:   rps,
+		maxBurst: rps,
+		rate:     rps,
+		lastTime: time.Now(),
+	}
+}
+
+func (rl *rateLimiterObj) Allow() bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	rl.tokens += now.Sub(rl.lastTime).Seconds() * rl.rate
+	rl.lastTime = now
+
+	if rl.tokens > rl.maxBurst {
+		rl.tokens = rl.maxBurst
+	}
+	if rl.tokens < 1 {
+		return false
+	}
+	rl.tokens--
+	return true
+}
+
+func (rl *rateLimiterObj) String() string {
+	return fmt.Sprintf("%.0f rps", rl.rate)
 }
 
 // handleRoot — health check (GET / и HEAD /)

@@ -84,10 +84,14 @@ func main() {
 	password := flag.String("password", "", "Open WebUI auth password (required)")
 	cacheDir := flag.String("cache-dir", "./cache", "cache directory for session files")
 	maxBody := flag.Int64("max-body", 100<<20, "max request body size in bytes (default 100 MB)")
+	maxErrorBody := flag.Int64("max-error-body", 1<<20, "max upstream error body size in bytes (default 1 MB)")
 	tagsTTL := flag.Duration("tags-ttl", 10*time.Minute, "TTL for /api/tags disk+memory cache")
 	showTTL := flag.Duration("show-ttl", 30*time.Minute, "TTL for /api/show disk cache")
 	timeout := flag.Duration("timeout", 30*time.Second, "HTTP timeout for non-streaming requests")
+	streamIdleTimeout := flag.Duration("stream-idle-timeout", 5*time.Minute, "idle timeout for streaming responses (0 = disabled)")
 	shutdownTimeout := flag.Duration("shutdown-timeout", 5*time.Second, "graceful shutdown timeout")
+	corsOrigins := flag.String("cors-origins", "*", "CORS Access-Control-Allow-Origin (empty = disabled)")
+	rateLimit := flag.Int("rate-limit", 0, "global rate limit in requests per second (0 = disabled)")
 	ollamaVersion := flag.String("ollama-version", "0.5.4", "Ollama API version string reported to clients")
 	infoShort := flag.Bool("i", false, "print info in text format and exit")
 	infoFmt := flag.String("info", "", "print info and exit (text|json)")
@@ -114,7 +118,14 @@ func main() {
 	}
 
 	a := auth.New(*openwebuiURL, *email, *password, *cacheDir)
-	srv := NewServer(a, *cacheDir, *maxBody, *tagsTTL, *showTTL, *timeout, *ollamaVersion)
+
+	// проверка доступности upstream и валидности креденшлов
+	if _, err := a.EnsureToken(context.Background()); err != nil {
+		log.Fatalf("Upstream not available: %v", err)
+	}
+	log.Printf("Upstream OK: %s", *openwebuiURL)
+
+	srv := NewServer(a, *cacheDir, *maxBody, *maxErrorBody, *tagsTTL, *showTTL, *timeout, *streamIdleTimeout, *ollamaVersion, *corsOrigins, *rateLimit)
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	httpServer := &http.Server{
@@ -130,7 +141,10 @@ func main() {
 		log.Printf("Ollama proxy started on %s", addr)
 		log.Printf("Open WebUI: %s", *openwebuiURL)
 		log.Printf("Cache: %s (tags TTL: %v, show TTL: %v)", *cacheDir, *tagsTTL, *showTTL)
-		log.Printf("Max body: %d MB, timeout: %v", *maxBody>>20, *timeout)
+		log.Printf("Max body: %d MB, timeout: %v, stream idle: %v", *maxBody>>20, *timeout, *streamIdleTimeout)
+		if *rateLimit > 0 {
+			log.Printf("Rate limit: %d rps", *rateLimit)
+		}
 
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)

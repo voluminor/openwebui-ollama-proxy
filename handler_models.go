@@ -20,6 +20,7 @@ import (
 // handleTags — GET /api/tags
 // Список моделей из Open WebUI → формат Ollama.
 // L1: in-memory (cache.TagsTTL), L2: диск, L3: upstream.
+// tagsFetchMu защищает от thundering herd при cache miss.
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	// L1: in-memory
 	s.modelsMu.RLock()
@@ -27,6 +28,21 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 		cached := s.modelsCache
 		s.modelsMu.RUnlock()
 		log.Printf("[tags] from memory cache, %d models", len(cached))
+		writeJSON(w, http.StatusOK, ollama.TagsResponse{Models: cached})
+		return
+	}
+	s.modelsMu.RUnlock()
+
+	// один fetch за раз — остальные горутины ждут на локе
+	s.tagsFetchMu.Lock()
+	defer s.tagsFetchMu.Unlock()
+
+	// повторная проверка L1: другая горутина могла уже загрузить
+	s.modelsMu.RLock()
+	if s.modelsCache != nil && time.Since(s.modelsCacheAt) < s.tagsTTL {
+		cached := s.modelsCache
+		s.modelsMu.RUnlock()
+		log.Printf("[tags] from memory cache (after wait), %d models", len(cached))
 		writeJSON(w, http.StatusOK, ollama.TagsResponse{Models: cached})
 		return
 	}
@@ -142,10 +158,12 @@ func (s *Server) fetchModels(ctx context.Context) ([]ollama.ModelInfo, error) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Open WebUI returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, s.maxErrorBody))
+		return nil, fmt.Errorf("Open WebUI returned %s: %s", resp.Status, strings.TrimSpace(string(errBody)))
 	}
+
+	body, _ := io.ReadAll(resp.Body)
 
 	// ответ может быть {data: [...]} или [...]
 	var models []openai.Model
