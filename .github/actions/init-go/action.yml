@@ -13,13 +13,3 @@ runs:
       with:
         cache: true
         go-version: ${{ inputs.go-version }}
-
-    - name: 🗂️ GO modules cache
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-          "C:\\Users\\runneradmin\\go\\pkg\\mod"
-        key: ${{ runner.os }}-go-${{ inputs.go-version }}-${{ hashFiles(format('./go.mod')) }}
-        restore-keys: ${{ runner.os }}-go
