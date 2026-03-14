@@ -23,7 +23,7 @@ import (
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	// L1: in-memory
 	s.modelsMu.RLock()
-	if s.modelsCache != nil && time.Since(s.modelsCacheAt) < cache.TagsTTL {
+	if s.modelsCache != nil && time.Since(s.modelsCacheAt) < s.tagsTTL {
 		cached := s.modelsCache
 		s.modelsMu.RUnlock()
 		log.Printf("[tags] from memory cache, %d models", len(cached))
@@ -36,7 +36,7 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	if disk := cache.ReadTags(s.cacheDir); disk != nil && time.Now().Before(disk.ExpiresAt) {
 		s.modelsMu.Lock()
 		s.modelsCache = disk.Models
-		s.modelsCacheAt = disk.ExpiresAt.Add(-cache.TagsTTL)
+		s.modelsCacheAt = disk.ExpiresAt.Add(-s.tagsTTL)
 		s.modelsMu.Unlock()
 		log.Printf("[tags] from disk cache, %d models", len(disk.Models))
 		writeJSON(w, http.StatusOK, ollama.TagsResponse{Models: disk.Models})
@@ -55,17 +55,17 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 	s.modelsCacheAt = time.Now()
 	s.modelsMu.Unlock()
 
-	if err := cache.WriteTags(s.cacheDir, models); err != nil {
+	if err := cache.WriteTags(s.cacheDir, models, s.tagsTTL); err != nil {
 		log.Printf("[tags] disk cache write: %v", err)
 	}
 
-	log.Printf("[tags] fetched %d models from upstream, cached for %v", len(models), cache.TagsTTL)
+	log.Printf("[tags] fetched %d models from upstream, cached for %v", len(models), s.tagsTTL)
 	writeJSON(w, http.StatusOK, ollama.TagsResponse{Models: models})
 }
 
 // handleShow — POST /api/show
 func (s *Server) handleShow(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+	r.Body = http.MaxBytesReader(w, r.Body, s.maxBodySize)
 
 	var req ollama.ShowRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -87,7 +87,7 @@ func (s *Server) handleShow(w http.ResponseWriter, r *http.Request) {
 
 	resp := buildShowResponse(req.Model)
 
-	if err := cache.WriteShow(s.cacheDir, req.Model, resp); err != nil {
+	if err := cache.WriteShow(s.cacheDir, req.Model, resp, s.showTTL); err != nil {
 		log.Printf("[show] disk cache write: %v", err)
 	}
 

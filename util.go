@@ -12,11 +12,6 @@ import (
 
 // // // // // // // // // //
 
-// лимит тела запроса — защита от OOM
-const maxBodySize = 10 << 20 // 10 MB
-
-// // // //
-
 // writeJSON — JSON-ответ с заданным статусом
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

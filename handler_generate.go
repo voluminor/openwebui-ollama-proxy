@@ -22,7 +22,7 @@ import (
 func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodySize)
+	r.Body = http.MaxBytesReader(w, r.Body, s.maxBodySize)
 
 	var req ollama.GenerateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

@@ -17,6 +17,10 @@ import (
 type Server struct {
 	auth            *auth.Obj
 	cacheDir        string
+	maxBodySize     int64
+	tagsTTL         time.Duration
+	showTTL         time.Duration
+	ollamaVersion   string
 	httpClient      *http.Client // streaming: без таймаута
 	httpClientShort *http.Client // не-streaming: с таймаутом
 	mux             *http.ServeMux
@@ -28,15 +32,19 @@ type Server struct {
 }
 
 // NewServer — создаёт сервер с роутингом
-func NewServer(a *auth.Obj, cacheDir string) *Server {
+func NewServer(a *auth.Obj, cacheDir string, maxBodySize int64, tagsTTL, showTTL, timeout time.Duration, ollamaVersion string) *Server {
 	s := &Server{
-		auth:     a,
-		cacheDir: cacheDir,
+		auth:          a,
+		cacheDir:      cacheDir,
+		maxBodySize:   maxBodySize,
+		tagsTTL:       tagsTTL,
+		showTTL:       showTTL,
+		ollamaVersion: ollamaVersion,
 		httpClient: &http.Client{
 			Timeout: 0, // streaming может длиться неограниченно
 		},
 		httpClientShort: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: timeout,
 		},
 		mux: http.NewServeMux(),
 	}
@@ -44,7 +52,7 @@ func NewServer(a *auth.Obj, cacheDir string) *Server {
 	// предзагрузка кеша моделей с диска при старте
 	if cached := cache.ReadTags(cacheDir); cached != nil && time.Now().Before(cached.ExpiresAt) {
 		s.modelsCache = cached.Models
-		s.modelsCacheAt = cached.ExpiresAt.Add(-cache.TagsTTL)
+		s.modelsCacheAt = cached.ExpiresAt.Add(-tagsTTL)
 	}
 
 	s.setupRoutes()
@@ -109,5 +117,5 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 // handleVersion — GET /api/version
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, ollama.VersionResponse{Version: "0.5.4"})
+	writeJSON(w, http.StatusOK, ollama.VersionResponse{Version: s.ollamaVersion})
 }

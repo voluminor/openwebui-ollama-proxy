@@ -13,9 +13,6 @@ import (
 
 var magicShow = [2]byte{0xCA, 0x03}
 
-// ShowTTL — время жизни кеша метаданных модели
-const ShowTTL = 30 * time.Minute
-
 // ShowObj — кешированные метаданные модели
 type ShowObj struct {
 	Response  ollama.ShowResponse
@@ -36,9 +33,9 @@ func ReadShow(cacheDir, model string) *ShowObj {
 }
 
 // WriteShow — записывает метаданные модели в кеш
-func WriteShow(cacheDir, model string, resp ollama.ShowResponse) error {
+func WriteShow(cacheDir, model string, resp ollama.ShowResponse, ttl time.Duration) error {
 	return Write(showPath(cacheDir, model), magicShow, ShowObj{
 		Response:  resp,
-		ExpiresAt: time.Now().Add(ShowTTL),
+		ExpiresAt: time.Now().Add(ttl),
 	})
 }

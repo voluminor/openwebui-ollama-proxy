@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -9,11 +10,70 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"openwebui-ollama-proxy/auth"
+	"openwebui-ollama-proxy/target"
 )
 
 // // // // // // // // // //
+
+const infoDescription = `openwebui-ollama-proxy bridges Ollama-compatible API clients to Open WebUI.
+It translates Ollama API calls (/api/chat, /api/generate, /api/tags, /api/show)
+into OpenAI-compatible requests forwarded to Open WebUI, enabling native Ollama
+clients (Ollie, Enchanted, etc.) to work with models hosted on Open WebUI.
+
+Features:
+  - Streaming and non-streaming chat and text generation
+  - Multimodal support: images forwarded as OpenAI content parts
+  - Three-level model list cache: memory -> disk -> upstream
+  - Per-model show cache with configurable TTL
+  - AES-256-GCM encrypted binary cache with SHA-256 integrity check
+  - Automatic session token management with encrypted disk persistence
+  - Graceful shutdown with configurable timeout`
+
+// // // //
+
+// printUsage — вывод справки (вызывается при -h / --help)
+func printUsage() {
+	fmt.Fprintf(os.Stderr, "%s %s  (build: %s)\n\n", target.GlobalName, target.GlobalVersion, buildHash())
+	fmt.Fprintf(os.Stderr, "Usage:\n  %s --openwebui-url <url> --email <email> --password <pass> [flags]\n\n", target.GlobalName)
+	fmt.Fprintf(os.Stderr, "Flags:\n")
+	flag.PrintDefaults()
+}
+
+// printInfo — вывод информации о сборке в указанном формате
+func printInfo(format string) {
+	build := buildHash()
+	switch format {
+	case "json":
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(map[string]string{
+			"name":        target.GlobalName,
+			"version":     target.GlobalVersion,
+			"updated":     target.GlobalDateUpdate,
+			"build":       build,
+			"description": infoDescription,
+		})
+	default: // text
+		fmt.Printf("%-8s %s %s\n", "Name", target.GlobalName, target.GlobalVersion)
+		fmt.Printf("%-8s %s\n", "Updated", target.GlobalDateUpdate)
+		fmt.Printf("%-8s %s\n", "Build", build)
+		fmt.Printf("\n%s\n", infoDescription)
+	}
+}
+
+// buildHash — последние 8 символов GlobalHash
+func buildHash() string {
+	h := target.GlobalHash
+	if len(h) > 8 {
+		return h[len(h)-8:]
+	}
+	return h
+}
+
+// // // //
 
 func main() {
 	// флаги командной строки
@@ -23,20 +83,38 @@ func main() {
 	email := flag.String("email", "", "Open WebUI auth email (required)")
 	password := flag.String("password", "", "Open WebUI auth password (required)")
 	cacheDir := flag.String("cache-dir", "./cache", "cache directory for session files")
+	maxBody := flag.Int64("max-body", 100<<20, "max request body size in bytes (default 100 MB)")
+	tagsTTL := flag.Duration("tags-ttl", 10*time.Minute, "TTL for /api/tags disk+memory cache")
+	showTTL := flag.Duration("show-ttl", 30*time.Minute, "TTL for /api/show disk cache")
+	timeout := flag.Duration("timeout", 30*time.Second, "HTTP timeout for non-streaming requests")
+	shutdownTimeout := flag.Duration("shutdown-timeout", 5*time.Second, "graceful shutdown timeout")
+	ollamaVersion := flag.String("ollama-version", "0.5.4", "Ollama API version string reported to clients")
+	infoShort := flag.Bool("i", false, "print info in text format and exit")
+	infoFmt := flag.String("info", "", "print info and exit (text|json)")
 
+	flag.Usage = printUsage
 	flag.Parse()
+
+	// инфо-режим: не требует обязательных флагов
+	if *infoShort || *infoFmt != "" {
+		format := *infoFmt
+		if format == "" {
+			format = "text"
+		}
+		printInfo(format)
+		return
+	}
 
 	// проверка обязательных параметров
 	if *openwebuiURL == "" || *email == "" || *password == "" {
 		fmt.Fprintln(os.Stderr, "Error: required flags: --openwebui-url, --email, --password")
 		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "Usage:")
-		flag.PrintDefaults()
+		flag.Usage()
 		os.Exit(1)
 	}
 
 	a := auth.New(*openwebuiURL, *email, *password, *cacheDir)
-	srv := NewServer(a, *cacheDir)
+	srv := NewServer(a, *cacheDir, *maxBody, *tagsTTL, *showTTL, *timeout, *ollamaVersion)
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	httpServer := &http.Server{
@@ -51,7 +129,8 @@ func main() {
 	go func() {
 		log.Printf("Ollama proxy started on %s", addr)
 		log.Printf("Open WebUI: %s", *openwebuiURL)
-		log.Printf("Cache: %s", *cacheDir)
+		log.Printf("Cache: %s (tags TTL: %v, show TTL: %v)", *cacheDir, *tagsTTL, *showTTL)
+		log.Printf("Max body: %d MB, timeout: %v", *maxBody>>20, *timeout)
 
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
@@ -61,7 +140,7 @@ func main() {
 	<-ctx.Done()
 	log.Println("Shutdown signal received, stopping server...")
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5e9) // 5 секунд
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), *shutdownTimeout)
 	defer cancel()
 
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
