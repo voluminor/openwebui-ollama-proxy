@@ -1,0 +1,289 @@
+name: "Release"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.25"
+
+jobs:
+  prepare:
+    name: "🔧 Prepare"
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - uses: ./.github/actions/init-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: ./.github/actions/tidy-all-and-generate
+
+      - name: 📦 Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: src-gen
+          path: .
+
+  test-garble:
+    name: "🧪 Garble test [${{ matrix.os }}]"
+    needs: [ prepare ]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: 📥 Download source
+        uses: actions/download-artifact@v4
+        with:
+          name: src-gen
+          path: .
+
+      - uses: ./.github/actions/init-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - uses: ./.github/actions/run-tests
+        with:
+          use-garble: 'true'
+
+  bump-version:
+    name: "📦 Minor version bump"
+    needs: [ test-garble ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: ./.github/actions/github-setup-user
+
+      - uses: ./.github/actions/init-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: 📦 Increment minor version
+        shell: bash
+        env:
+          GOFLAGS: -mod=mod
+        run: |
+          set -Eeuo pipefail
+          new_ver=$(./_run/scripts/sys.sh --increment --minor)
+          echo "New version: $new_ver"
+
+          mkdir -p target tmp
+          go generate ./...
+
+          git add _run/values/ver.txt target/
+          git commit -m "minor(${new_ver}): release"
+          git push origin HEAD:main
+
+      - uses: ./.github/actions/generate-build-env
+
+      - name: 📦 Upload source
+        uses: actions/upload-artifact@v4
+        with:
+          name: src-bumped
+          path: .
+
+  build:
+    name: "🛠️ Build all platforms"
+    needs: [ bump-version ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: 📥 Download source
+        uses: actions/download-artifact@v4
+        with:
+          name: src-bumped
+          path: .
+
+      - name: 🗒️ Source env
+        shell: bash
+        run: cat build_env.txt >> $GITHUB_ENV
+
+      - uses: ./.github/actions/init-go
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: 📦 Install garble
+        shell: bash
+        run: go install mvdan.cc/garble@latest
+
+      - name: 🛠️ Cross-compile all targets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p dist
+
+          # format: GOOS/GOARCH[/variant]
+          targets=(
+            windows/amd64
+            windows/arm64
+            windows/arm/7
+            windows/386
+            linux/amd64
+            linux/arm64
+            linux/arm/7
+            linux/arm/6
+            linux/386
+            linux/mips/softfloat
+            linux/mipsle/softfloat
+            linux/mips64
+            linux/mips64le
+            linux/ppc64
+            linux/ppc64le
+            linux/riscv64
+            linux/s390x
+            darwin/amd64
+            darwin/arm64
+            freebsd/amd64
+            freebsd/arm64
+            freebsd/arm/6
+            freebsd/arm/7
+            freebsd/386
+            openbsd/amd64
+            openbsd/arm64
+            openbsd/arm/6
+            openbsd/arm/7
+            openbsd/386
+            netbsd/amd64
+            netbsd/arm64
+            netbsd/arm/6
+            netbsd/arm/7
+            netbsd/386
+            android/amd64
+            android/arm64
+            android/arm/7
+            android/386
+          )
+
+          NDK_BIN="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_API=21
+
+          for target in "${targets[@]}"; do
+            IFS='/' read -r os arch variant <<< "$target"
+
+            export GOOS="$os"
+            export GOARCH="$arch"
+            export CGO_ENABLED=0
+            unset GOARM GOMIPS CC
+
+            suffix=""
+            tag="${os}-${arch}"
+
+            if [[ "$os" == "windows" ]]; then
+              suffix=".exe"
+            fi
+
+            if [[ "$arch" == "arm" && -n "$variant" ]]; then
+              export GOARM="$variant"
+              tag="${os}-armv${variant}"
+            elif [[ ("$arch" == "mips" || "$arch" == "mipsle") && -n "$variant" ]]; then
+              export GOMIPS="$variant"
+            fi
+
+            # android/amd64, android/arm, android/386 require CGO (external linker)
+            if [[ "$os" == "android" && "$arch" != "arm64" ]]; then
+              export CGO_ENABLED=1
+              case "$arch" in
+                amd64) export CC="${NDK_BIN}/x86_64-linux-android${ANDROID_API}-clang" ;;
+                arm)   export CC="${NDK_BIN}/armv7a-linux-androideabi${ANDROID_API}-clang" ;;
+                386)   export CC="${NDK_BIN}/i686-linux-android${ANDROID_API}-clang" ;;
+              esac
+            fi
+
+            outname="${BUILD_NAME}-${tag}${suffix}"
+            echo "→ ${outname}"
+            garble -tiny build -ldflags="-s -w" -o "dist/${outname}" ./
+          done
+
+          echo ""
+          echo "=== Built $(ls dist/ | wc -l) binaries ==="
+          ls -lhS dist/
+
+      - name: 📦 Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          if-no-files-found: error
+          path: dist/
+
+  release:
+    name: "🚀 Release"
+    needs: [ bump-version, build ]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: 🛎️ Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 📥 Download source
+        uses: actions/download-artifact@v4
+        with:
+          name: src-bumped
+          path: .
+
+      - name: 🗒️ Source env
+        shell: bash
+        run: cat build_env.txt >> $GITHUB_ENV
+
+      - name: 📥 Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
+
+      - uses: ./.github/actions/github-setup-user
+
+      - name: 🏷️ Tag and release
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          git tag -a "${BUILD_VER}" -m "Release ${BUILD_VER}"
+          git push origin "${BUILD_VER}"
+
+          gh release create "${BUILD_VER}" dist/* \
+            --title "${BUILD_VER}" \
+            --generate-notes
+
+      - name: 🧹 Cleanup artifacts
+        if: always()
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            src-gen
+            src-bumped
+            binaries
+          failOnError: false

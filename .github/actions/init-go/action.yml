@@ -1,0 +1,15 @@
+name: 'Setup GO with cache'
+description: 'Setup GO and configure modules cache'
+inputs:
+  go-version:
+    description: 'GO version'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🔧 Install Go ${{ inputs.go-version }}
+      uses: actions/setup-go@v6
+      with:
+        cache: true
+        go-version: ${{ inputs.go-version }}

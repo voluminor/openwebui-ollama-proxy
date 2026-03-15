@@ -1,0 +1,35 @@
+name: 'Run tests and benchmarks'
+description: 'Reusable test block: go test or garble test + benchmarks'
+inputs:
+  use-garble:
+    description: 'Run tests through garble instead of go test'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 📦 Install garble
+      if: inputs.use-garble == 'true'
+      shell: bash
+      run: go install mvdan.cc/garble@latest
+
+    - name: 🧪 Run tests (garble)
+      if: inputs.use-garble == 'true'
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        garble test -v ./...
+
+    - name: 🧪 Run tests (go)
+      if: inputs.use-garble != 'true'
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        go test -race -v ./...
+
+    - name: 📊 Run benchmarks
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        go test -bench . -run=NONE -v ./...
