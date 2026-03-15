@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -82,7 +83,7 @@ func main() {
 	openwebuiURL := flag.String("openwebui-url", "", "Open WebUI URL (required)")
 	email := flag.String("email", "", "Open WebUI auth email (required)")
 	password := flag.String("password", "", "Open WebUI auth password (required)")
-	cacheDir := flag.String("cache-dir", "./cache", "cache directory for session files")
+	cacheDir := flag.String("cache-dir", "", "cache directory (default: OS user cache dir)")
 	maxBody := flag.Int64("max-body", 100<<20, "max request body size in bytes (default 100 MB)")
 	maxErrorBody := flag.Int64("max-error-body", 1<<20, "max upstream error body size in bytes (default 1 MB)")
 	tagsTTL := flag.Duration("tags-ttl", 10*time.Minute, "TTL for /api/tags disk+memory cache")
@@ -107,6 +108,15 @@ func main() {
 		}
 		printInfo(format)
 		return
+	}
+
+	// resolve cache directory: empty → os.UserCacheDir()/appname
+	if *cacheDir == "" {
+		if d, err := os.UserCacheDir(); err == nil {
+			*cacheDir = filepath.Join(d, target.GlobalName)
+		} else {
+			*cacheDir = filepath.Join(os.TempDir(), target.GlobalName)
+		}
 	}
 
 	// required parameters check

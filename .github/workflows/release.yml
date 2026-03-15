@@ -184,13 +184,16 @@ jobs:
             android/386
           )
 
+          NDK_BIN="${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_API=21
+
           for target in "${targets[@]}"; do
             IFS='/' read -r os arch variant <<< "$target"
 
             export GOOS="$os"
             export GOARCH="$arch"
             export CGO_ENABLED=0
-            unset GOARM GOMIPS
+            unset GOARM GOMIPS CC
 
             suffix=""
             tag="${os}-${arch}"
@@ -204,6 +207,16 @@ jobs:
               tag="${os}-armv${variant}"
             elif [[ ("$arch" == "mips" || "$arch" == "mipsle") && -n "$variant" ]]; then
               export GOMIPS="$variant"
+            fi
+
+            # android/amd64, android/arm, android/386 require CGO (external linker)
+            if [[ "$os" == "android" && "$arch" != "arm64" ]]; then
+              export CGO_ENABLED=1
+              case "$arch" in
+                amd64) export CC="${NDK_BIN}/x86_64-linux-android${ANDROID_API}-clang" ;;
+                arm)   export CC="${NDK_BIN}/armv7a-linux-androideabi${ANDROID_API}-clang" ;;
+                386)   export CC="${NDK_BIN}/i686-linux-android${ANDROID_API}-clang" ;;
+              esac
             fi
 
             outname="${BUILD_NAME}-${tag}${suffix}"
