@@ -95,7 +95,7 @@ jobs:
           mkdir -p target tmp
           go generate ./...
 
-          git add _run/values/ver.txt target/
+          git add _run/values/ver.txt
           git commit -m "minor(${new_ver}): release"
           git push origin HEAD:main
 
