@@ -44,7 +44,7 @@ Download the binary for your platform from the [releases page](../../releases).
 ### Build from source
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/voluminor/openwebui-ollama-proxy.git
 cd openwebui-ollama-proxy
 go generate ./...
 go build -o openwebui-ollama-proxy ./
@@ -260,7 +260,7 @@ flowchart LR
 |-------------------------|----------------------|----------------------------------------------|
 | `--host`                | `0.0.0.0`            | Bind address                                 |
 | `--port`                | `11434`              | Port (standard Ollama port)                  |
-| `--cache-dir`           | `./cache`            | Cache file directory                         |
+| `--cache-dir`           | OS user cache dir    | Cache file directory                         |
 | `--tags-ttl`            | `10m`                | Model list cache TTL                         |
 | `--show-ttl`            | `30m`                | Model metadata cache TTL                     |
 | `--timeout`             | `30s`                | Non-streaming request timeout                |
@@ -472,8 +472,11 @@ flowchart LR
     Merge -.->|dispatch| Release
 ```
 
-Tests run with the `-race` flag and include benchmarks. Release builds are obfuscated
-via [garble](https://github.com/burrowers/garble).
+Tests run with the `-race` flag and include benchmarks. Release binaries are built
+via [garble](https://github.com/burrowers/garble) (`garble -tiny build -ldflags="-s -w"`),
+which strips all symbol names, debug info and string literals. This results in significantly
+smaller binaries and avoids false-positive detections by antivirus software (many AV engines
+flag standard Go binaries due to the large runtime and embedded metadata).
 
 ## Supported Platforms
 
