@@ -3,6 +3,7 @@ package cache
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -120,6 +121,10 @@ func TestWrite_CreatesDirectory(t *testing.T) {
 }
 
 func TestWrite_FilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file permissions are not supported on Windows")
+	}
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "perms.bin")
 
